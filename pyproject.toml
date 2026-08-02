@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "log-viewer"
+version = "0.1.0"
+description = "Local-first real-time multi-log viewer for Linux"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Log Viewer contributors"}]
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "pydantic>=2.8,<3",
+  "paramiko>=3.5,<5",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.24,<2",
+  "httpx>=0.27,<1",
+  "coverage[toml]>=7.6,<8",
+  "ruff>=0.8,<1",
+]
+
+[project.scripts]
+log-viewer = "log_viewer.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["log_viewer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+markers = [
+  "unit: isolated unit tests",
+  "integration: component integration tests",
+  "acceptance: acceptance-level behavior tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["log_viewer"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 75

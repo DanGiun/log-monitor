@@ -1,0 +1,6 @@
+2026-07-10 15:58:57.655 INFO  source.main.agent: Starting program
+2026-07-10 15:58:57.656 DEBUG source.main.agent: Building dependencies
+2026-07-10 15:58:57.657 WARNING source.main.agent: Retry connect to 8.8.8.8
+2026-07-10 15:58:57.658 ERROR source.main.agent: Request to JSON failed
+        stack frame: example.py:10
+        stack frame: worker.py:22

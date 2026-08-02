@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log Viewer</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">LV</span><strong>Log Viewer</strong></div>
+    <label>Workspace <select id="workspace-select"></select></label>
+    <button id="new-workspace">New</button>
+    <button id="duplicate-workspace">Duplicate</button>
+    <button id="delete-workspace" class="danger ghost">Delete</button>
+    <span class="spacer"></span>
+    <label>Columns <select id="grid-columns"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+    <button id="add-panel" class="primary">+ Panel</button>
+    <button id="open-settings">Settings</button>
+    <a class="button ghost" href="/api/diagnostics">Diagnostics</a>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-title"><strong>Sources</strong><button id="add-source" class="primary small">+ Add</button></div>
+      <div id="source-list" class="source-list"></div>
+      <div class="buffer-card">
+        <div><span>Disk buffer</span><strong id="buffer-usage">0 MB</strong></div>
+        <div class="progress"><span id="buffer-progress"></span></div>
+      </div>
+    </aside>
+    <main id="panel-grid" class="panel-grid"></main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <dialog id="source-dialog">
+    <form id="source-form" method="dialog" class="dialog-form">
+      <h2 id="source-dialog-title">Add source</h2>
+      <input type="hidden" id="source-id">
+      <label>Name<input id="source-name" required maxlength="200"></label>
+      <label>Type<select id="source-kind"><option value="local">Local file</option><option value="ssh">SSH / SFTP</option></select></label>
+      <label>File path<input id="source-path" required placeholder="/var/log/application.log"></label>
+      <div id="ssh-fields" class="hidden two-col">
+        <label>Host<input id="ssh-host"></label>
+        <label>Port<input id="ssh-port" type="number" value="22" min="1" max="65535"></label>
+        <label>Username<input id="ssh-user"></label>
+        <label>Private key path<input id="ssh-key" placeholder="~/.ssh/id_ed25519"></label>
+      </div>
+      <div class="two-col">
+        <label>Time shift (hours)<input id="source-offset" type="number" min="-23" max="23" value="0"></label>
+        <label>Initial events<input id="source-history" type="number" min="1" max="100000" value="30"></label>
+        <label>Color<input id="source-color" type="color" value="#6ea8fe"></label>
+        <label>Parser<select id="source-parser"><option value="auto">Auto</option><option value="text">Text</option><option value="jsonl">JSON Lines</option><option value="syslog">Syslog</option></select></label>
+      </div>
+      <label>Custom timestamp regex <input id="source-regex" placeholder="(?P&lt;timestamp&gt;...)"></label>
+      <label>Timestamp format <input id="source-format" placeholder="%Y-%m-%d %H:%M:%S.%f"></label>
+      <div class="dialog-actions"><button type="button" class="ghost dialog-cancel">Cancel</button><button id="save-source" value="default" class="primary">Save</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="panel-dialog">
+    <form id="panel-form" method="dialog" class="dialog-form">
+      <h2>Add panel</h2>
+      <label>Panel title<input id="panel-title" value="Log panel"></label>
+      <fieldset><legend>Select one or more sources</legend><div id="panel-source-options" class="check-list"></div></fieldset>
+      <div class="dialog-actions"><button type="button" class="ghost dialog-cancel">Cancel</button><button id="save-panel" value="default" class="primary">Add panel</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="filter-dialog">
+    <form id="filter-form" method="dialog" class="dialog-form wide">
+      <h2>Advanced filter</h2>
+      <input type="hidden" id="filter-panel-id">
+      <div class="saved-filter-bar">
+        <select id="saved-filter-select"><option value="">Saved filters…</option></select><button type="button" id="load-saved-filter">Load</button>
+        <input id="saved-filter-name" placeholder="Filter name"><button type="button" id="save-named-filter">Save current</button>
+      </div>
+      <div class="filter-group-header">
+        <label>Group logic<select id="filter-logic"><option>AND</option><option>OR</option></select></label>
+        <label class="inline"><input type="checkbox" id="filter-negate"> Negate whole group</label>
+        <button type="button" id="add-condition">+ Condition</button>
+      </div>
+      <div id="condition-list"></div>
+      <p class="hint">Regular expressions are validated by the server. JSON fields support paths such as <code>request.id</code>.</p>
+      <div class="dialog-actions"><button type="button" class="ghost dialog-cancel">Cancel</button><button id="apply-filter" value="default" class="primary">Apply</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form id="settings-form" method="dialog" class="dialog-form">
+      <h2>Settings</h2>
+      <label>Disk buffer limit (GB)<input id="settings-buffer" type="number" min="0.1" max="20" step="0.1"></label>
+      <label>Combined stream sort delay (seconds)<input id="settings-sort-delay" type="number" min="0" max="10" step="0.1"></label>
+      <label class="inline"><input id="settings-browser" type="checkbox"> Open browser on startup</label>
+      <div class="dialog-actions"><button type="button" class="ghost dialog-cancel">Cancel</button><button class="primary">Save</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="aggregation-dialog">
+    <div class="dialog-form wide">
+      <h2>QA aggregations</h2>
+      <div id="aggregation-content"></div>
+      <div class="dialog-actions"><button onclick="this.closest('dialog').close()" class="primary">Close</button></div>
+    </div>
+  </dialog>
+
+  <template id="condition-template">
+    <div class="condition-row">
+      <select class="condition-field"><option value="message">Message</option><option value="level">Level</option><option value="source">Source id</option><option value="json">JSON field</option><option value="timestamp">Timestamp</option></select>
+      <input class="condition-path hidden" placeholder="JSON path">
+      <select class="condition-operator"><option value="contains">contains</option><option value="not_contains">does not contain</option><option value="regex">matches regex</option><option value="not_regex">does not match regex</option><option value="equals">equals</option><option value="not_equals">does not equal</option><option value="gte">≥</option><option value="lte">≤</option></select>
+      <input class="condition-value" placeholder="Value">
+      <label class="inline"><input type="checkbox" class="condition-case"> Aa</label>
+      <button type="button" class="remove-condition danger ghost">×</button>
+    </div>
+  </template>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

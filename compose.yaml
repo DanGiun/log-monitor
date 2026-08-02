@@ -1,0 +1,9 @@
+services:
+  log-viewer:
+    build: .
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./dev-config:/root/.config/log-viewer
+      - ./sample-logs:/logs:ro
+    restart: unless-stopped

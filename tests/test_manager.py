@@ -1,0 +1,70 @@
+import asyncio
+
+import pytest
+
+from log_viewer.config import ConfigStore
+from log_viewer.manager import SourceManager
+from log_viewer.models import SourceConfig, SourceStatus
+from log_viewer.storage import EventStore
+
+
+@pytest.fixture
+def manager_parts(tmp_path):
+    config = ConfigStore(tmp_path / "config.json")
+    store = EventStore(tmp_path / "cache", 10_000_000)
+    manager = SourceManager(config, store)
+    yield config, store, manager
+    store.close()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_manager_starts_missing_source_and_stops_cleanly(manager_parts, tmp_path):
+    config, _, manager = manager_parts
+    source = SourceConfig(name="missing", path=str(tmp_path / "missing.log"), poll_interval_ms=100)
+    config.update(lambda cfg: cfg.sources.append(source))
+    await manager.start_all()
+    await asyncio.sleep(0.05)
+    assert manager.get_statuses()[0].state == "missing"
+    await manager.stop_all()
+    assert manager.tasks == {}
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_manager_publishes_event_to_subscriber_and_store(manager_parts, event_factory):
+    _, store, manager = manager_parts
+    stream = manager.subscribe(["source-a"])
+    pending = asyncio.create_task(anext(stream))
+    event = event_factory()
+    await manager._on_events([event], True)
+    received = await asyncio.wait_for(pending, 1)
+    assert received.id == event.id
+    assert store.count() == 1
+    await stream.aclose()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_status_transition_preserves_last_event_metadata(manager_parts, event_factory):
+    _, _, manager = manager_parts
+    await manager._on_status(SourceStatus(source_id="source-a", state="running", timestamp_seen=False))
+    await manager._on_events([event_factory()], True)
+    await manager._on_status(SourceStatus(source_id="source-a", state="error", detail="lost"))
+    status = manager.statuses["source-a"]
+    assert status.state == "error"
+    assert status.timestamp_seen is True
+    assert status.last_event_at is not None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_sync_sources_starts_and_removes_tasks(manager_parts, tmp_path):
+    config, _, manager = manager_parts
+    source = SourceConfig(name="x", path=str(tmp_path / "none"), enabled=True, poll_interval_ms=100)
+    config.update(lambda cfg: cfg.sources.append(source))
+    await manager.sync_sources()
+    assert source.id in manager.tasks
+    config.update(lambda cfg: setattr(cfg, "sources", []))
+    await manager.sync_sources()
+    assert source.id not in manager.tasks

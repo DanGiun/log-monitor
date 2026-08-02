@@ -1,0 +1,17 @@
+[Unit]
+Description=Log Viewer local web application
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=@EXEC@ --host 127.0.0.1 --port 8765 --no-browser
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.config/log-viewer %h/.cache/log-viewer %h/.local/state/log-viewer
+
+[Install]
+WantedBy=default.target
