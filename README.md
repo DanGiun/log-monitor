@@ -2,21 +2,6 @@
 
 Local-first, real-time multi-log viewer for Linux. It runs a web interface on `127.0.0.1`, reads local files and remote files through SSH/SFTP, and never modifies source logs.
 
-## Main capabilities
-
-- Dark, English-language web UI for Firefox and Chromium.
-- One log per panel, several panels in a grid, or multiple sources merged into one time-ordered panel.
-- Per-source integer time shift from `-23` to `+23` hours. Display, ordering, filters, and aggregations use shifted time.
-- Local `tail -F`-style polling with nonfatal missing-file, truncation, and rotation handling.
-- SSH/SFTP source support using a private key or `ssh-agent`; host keys must already be trusted in system `known_hosts`.
-- UTF-8 text, JSON Lines, common syslog timestamps, custom timestamp regex and `strptime` format, and multiline events.
-- Text/grep filters, exclusions, regular expressions, levels, sources, time ranges, JSON fields, `AND`/`OR`/`NOT`, and named filters.
-- QA aggregations: level/source counts, time buckets, top warnings/errors, exact and normalized repeated messages, first/last occurrence.
-- Movable and vertically resizable panels, 1–4 columns, pause/resume, source stop/start, autoscroll, jump to latest, line wrapping, fullscreen, and double-click copy.
-- Persistent source catalog, workspaces, layouts, colors, offsets, filters, and settings.
-- Ephemeral SQLite disk buffer, 5 GiB by default and configurable from 100 MiB to 20 GiB. It is removed on normal shutdown and stale session data is removed at startup.
-- Diagnostic report contains application state, but not viewed log content or SSH secrets.
-
 ## Requirements
 
 - Linux x86_64 or ARM64.
