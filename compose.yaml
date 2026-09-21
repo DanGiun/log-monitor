@@ -7,3 +7,8 @@ services:
       - ./dev-config:/root/.config/log-viewer
       - ./sample-logs:/logs:ro
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
