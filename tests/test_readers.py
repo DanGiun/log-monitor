@@ -52,7 +52,71 @@ async def test_append_is_read_in_real_time(tmp_path):
     await follower.initialize()
     path.write_text(path.read_text() + "2026-07-10 10:00:01 INFO second\n", encoding="utf-8")
     await follower.poll_once()
+    await follower.poll_once()
     assert any("second" in item.message for item in received)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_multiline_event_can_span_poll_cycles(tmp_path):
+    path = tmp_path / "a.log"
+    path.write_text("", encoding="utf-8")
+    received = []
+
+    async def on_events(events, seen):
+        received.extend(events)
+
+    async def on_status(status):
+        pass
+
+    follower = LocalFileFollower(SourceConfig(name="a", path=str(path)), on_events, on_status)
+    await follower.initialize()
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("2026-07-10 10:00:01 ERROR failed\n")
+    await follower.poll_once()
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("stack frame: worker.py:22\n")
+    await follower.poll_once()
+    await follower.poll_once()
+    assert len(received) == 1
+    assert received[0].message.endswith("stack frame: worker.py:22")
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_partial_continuation_is_not_flushed_during_idle_poll(tmp_path):
+    path = tmp_path / "a.log"
+    path.write_text("", encoding="utf-8")
+    received = []
+
+    async def on_events(events, seen):
+        received.extend(events)
+
+    async def on_status(status):
+        pass
+
+    follower = LocalFileFollower(SourceConfig(name="a", path=str(path)), on_events, on_status)
+    await follower.initialize()
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("2026-07-10 10:00:01 ERROR failed\nstack fra")
+    await follower.poll_once()
+    await follower.poll_once()
+    assert received == []
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("me: worker.py:22\n")
+    await follower.poll_once()
+    await follower.poll_once()
+    assert len(received) == 1
+    assert received[0].message.endswith("stack frame: worker.py:22")
+
+
+@pytest.mark.unit
+def test_tail_does_not_fail_when_window_starts_inside_utf8_character(tmp_path):
+    path = tmp_path / "utf8.log"
+    path.write_text((("я" * 40) + "\n") * 3000, encoding="utf-8")
+    lines = tail_utf8_lines(path, 1)
+    assert lines
+    assert all(set(line) == {"я"} for line in lines)
 
 
 @pytest.mark.integration
@@ -66,6 +130,7 @@ async def test_truncation_restarts_from_beginning_and_reports_detail(tmp_path):
     follower = LocalFileFollower(SourceConfig(name="a", path=str(path)), on_events, on_status)
     await follower.initialize()
     path.write_text("2026-07-10 10:01:00 INFO new\n", encoding="utf-8")
+    await follower.poll_once()
     await follower.poll_once()
     assert any("truncated" in item.detail for item in statuses)
     assert any("new" in item.message for item in received)
@@ -84,6 +149,7 @@ async def test_rotation_switches_to_replacement_file(tmp_path):
     rotated = tmp_path / "a.log.1"
     path.replace(rotated)
     path.write_text("2026-07-10 10:01:00 INFO replacement\n", encoding="utf-8")
+    await follower.poll_once()
     await follower.poll_once()
     assert any("rotation" in item.detail.lower() for item in statuses)
     assert any("replacement" in item.message for item in received)
@@ -108,6 +174,7 @@ async def test_rotation_drains_remaining_old_inode_before_replacement(tmp_path):
     with rotated.open("a", encoding="utf-8") as handle:
         handle.write("2026-07-10 10:00:01 INFO old-tail\n")
     path.write_text("2026-07-10 10:00:02 INFO replacement\n", encoding="utf-8")
+    await follower.poll_once()
     await follower.poll_once()
     messages = [event.message for event in received]
     assert any("old-tail" in message for message in messages)

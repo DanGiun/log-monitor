@@ -2,19 +2,71 @@
 
 ## Components
 
-```text
-Browser UI
-   │ REST + WebSocket on 127.0.0.1
-FastAPI application
-   ├── ConfigStore ── ~/.config/log-viewer/config.json
-   ├── SourceManager
-   │    ├── LocalFileFollower
-   │    └── SSHFileFollower (Paramiko/SFTP)
-   ├── LogParser + EventAssembler
-   ├── EventStore ── ephemeral SQLite/WAL cache
-   ├── Filter engine
-   └── Aggregation engine
+```mermaid
+flowchart TD
+    UI["Browser UI"] -->|"REST + WebSocket"| API["FastAPI application"]
+    API --> CFG["ConfigStore"]
+    API --> MGR["SourceManager"]
+    API --> DB["EventStore"]
+    API --> AGG["Aggregation engine"]
+    MGR --> LOCAL["LocalFileFollower"]
+    MGR --> SSH["SSHFileFollower"]
+    LOCAL --> PARSER["LogParser + EventAssembler"]
+    SSH --> PARSER
+    PARSER --> MGR
+    MGR --> DB
+    DB --> FILTER["Filter engine"]
 ```
+
+## Dependency and connectivity map
+
+| Component | Direct dependencies | Called by / output | Persistent effect |
+|---|---|---|---|
+| `cli.py` | `argparse`, `uvicorn`, `api.create_app` | console entry point | diagnostic application log |
+| `api.py` | config, manager, storage, filters, aggregation, models | REST, WebSocket, static UI | delegates config changes |
+| `config.py` | `AppConfig`, JSON, atomic filesystem replace | API and manager | `config.json`, mode `0600` |
+| `models.py` | Pydantic | every backend layer and API schema | none |
+| `manager.py` | config, storage, local/SSH readers | API lifecycle and WebSocket subscription | none |
+| `readers.py` | parser, source/status models, Paramiko for SSH | manager tasks | read-only access to source logs |
+| `parser.py` | parser config and event models | both reader implementations | none |
+| `storage.py` | SQLite/WAL, filters | manager writes; API queries | session-only cache |
+| `filters.py` | filter/event models, regex and datetime parsing | storage query and saved-filter validation | none |
+| `aggregation.py` | event model | aggregation endpoint | none |
+| `static/app.js` | REST and WebSocket contracts | browser DOM | workspace/source configuration through API |
+
+## Runtime flows
+
+### Ingestion
+
+```mermaid
+sequenceDiagram
+    participant R as Reader
+    participant P as Parser
+    participant M as SourceManager
+    participant S as EventStore
+    participant W as WebSocket
+    R->>P: UTF-8 lines
+    P-->>R: logical LogEvent blocks
+    R->>M: events and source status
+    M->>S: insert batch
+    M-->>W: publish to subscribers
+```
+
+### Query and display
+
+The UI posts source IDs and a filter tree to `/api/query`. `EventStore` scans the
+newest rows in deterministic pages, evaluates the filter tree, returns up to the
+requested number of matching events, and sorts the result chronologically. New
+events then arrive over one shared WebSocket and are inserted into each active
+panel in stable order.
+
+### Source reconfiguration
+
+Metadata-only changes such as name and color do not restart a reader. Changes to
+the path, parser, SSH connection, time shift, history depth, or polling interval
+stop the old task before cache adjustment and restart. The cache tail that will
+be reread is removed first, preventing duplicate events while preserving older
+session history.
 
 ## Design decisions
 

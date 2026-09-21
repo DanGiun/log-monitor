@@ -4,6 +4,21 @@
 
 Verify that Log Viewer reads supported sources without modifying them, applies time shifts consistently, merges and filters events correctly, persists only configuration, remains available during source failures, and enforces security and resource boundaries.
 
+## Generated test data
+
+`scripts/generate_test_logs.py` produces deterministic fixtures for:
+
+- ordinary text with every supported severity;
+- multiline stack traces split across physical lines;
+- TLL-style nested payloads containing embedded ISO timestamps;
+- JSON Lines with nested numeric/string/boolean/null fields;
+- syslog and custom-regex timestamps;
+- malformed JSON, timestamp-less text, Unicode, negative numbers, IPs, and changing IDs;
+- optional live append traffic for polling and WebSocket checks.
+
+The standard QA matrix uses 60 logical events per timestamped source and validates
+the exact resulting counts before filter assertions.
+
 ## Test levels
 
 - **Unit:** models, timestamp parsing, multiline assembly, filters, normalization, aggregations.

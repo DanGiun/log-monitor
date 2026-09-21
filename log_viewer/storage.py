@@ -166,22 +166,35 @@ class EventStore:
         if not include_without_timestamp:
             clauses.append("display_ts IS NOT NULL")
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        fetch_limit = min(max(limit * 5, limit), 100_000)
+        fetch_limit = min(max(limit * 5, 1000), 100_000)
         sql = f"""
             SELECT * FROM events {where}
             ORDER BY
                 CASE WHEN display_ts IS NULL THEN 1 ELSE 0 END,
                 display_ts DESC,
                 received_at DESC,
-                sequence DESC
-            LIMIT ?
+                sequence DESC,
+                id DESC
+            LIMIT ? OFFSET ?
         """
-        params.append(fetch_limit)
+        filtered: list[LogEvent] = []
+        offset = 0
         with self._lock:
-            rows = self._connection.execute(sql, params).fetchall()
-        events = [self._row_to_event(row) for row in rows]
-        filtered = [event for event in events if matches_filter(event, filter_group)]
-        filtered = filtered[:limit]
+            while len(filtered) < limit:
+                rows = self._connection.execute(
+                    sql, [*params, fetch_limit, offset]
+                ).fetchall()
+                if not rows:
+                    break
+                for row in rows:
+                    event = self._row_to_event(row)
+                    if matches_filter(event, filter_group):
+                        filtered.append(event)
+                        if len(filtered) == limit:
+                            break
+                if len(rows) < fetch_limit:
+                    break
+                offset += len(rows)
         filtered.sort(
             key=lambda event: (
                 event.display_timestamp or event.received_at,
@@ -191,6 +204,29 @@ class EventStore:
             )
         )
         return filtered
+
+    def delete_latest(self, source_id: str, limit: int) -> None:
+        """Remove the tail that a restarted reader is about to ingest again."""
+        with self._lock, self._connection:
+            victims = self._connection.execute(
+                """
+                SELECT id, size_bytes FROM events
+                WHERE source_id = ?
+                ORDER BY received_at DESC, sequence DESC, id DESC
+                LIMIT ?
+                """,
+                (source_id, limit),
+            ).fetchall()
+            if not victims:
+                return
+            reclaimed = sum(int(row["size_bytes"]) for row in victims)
+            self._connection.executemany(
+                "DELETE FROM events WHERE id = ?", [(row["id"],) for row in victims]
+            )
+            self._connection.execute(
+                "UPDATE metadata SET value = MAX(0, value - ?) WHERE key = 'logical_bytes'",
+                (reclaimed,),
+            )
 
     def shift_source(self, source_id: str, offset_hours: int) -> None:
         """Recalculate display timestamps for buffered events after offset changes."""

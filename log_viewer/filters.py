@@ -29,6 +29,12 @@ def validate_filter(group: FilterGroup) -> None:
                 re.compile(str(condition.value))
             except re.error as exc:
                 raise FilterValidationError(f"invalid regular expression: {exc}") from exc
+        if condition.field == "timestamp" and condition.operator in ("gte", "lte"):
+            try:
+                if not isinstance(condition.value, datetime):
+                    datetime.fromisoformat(str(condition.value))
+            except (TypeError, ValueError) as exc:
+                raise FilterValidationError(f"invalid timestamp value: {condition.value}") from exc
     for child in group.groups:
         validate_filter(child)
 

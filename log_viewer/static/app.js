@@ -184,13 +184,14 @@ function createPanel(panel) {
 }
 
 async function loadPanel(panel) {
-  if (!panel.source_ids.length) return;
+  if (!panel.source_ids.length) return true;
   const root = document.querySelector(`[data-panel-id="${panel.id}"]`);
   try {
     const events = await api("/api/query", {method:"POST", body:JSON.stringify({source_ids:panel.source_ids, filter:buildQuickFilter(panel), limit:2000, include_without_timestamp:panel.source_ids.length === 1})});
     state.panelEvents.set(panel.id, events.sort(eventSort));
     renderPanelEvents(panel, root);
-  } catch (error) { toast(`Panel query failed: ${error.message}`, "error"); }
+    return true;
+  } catch (error) { toast(`Panel query failed: ${error.message}`, "error"); return false; }
 }
 
 function renderPanelEvents(panel, root=document.querySelector(`[data-panel-id="${panel.id}"]`)) {
@@ -221,7 +222,12 @@ function updatePanelBanner(panel, root) {
 }
 
 function connectWebSocket() {
-  if (state.websocket) state.websocket.close();
+  clearTimeout(state.reconnectTimer);
+  if (state.websocket) {
+    state.websocket.onclose = null;
+    state.websocket.close();
+    state.websocket = null;
+  }
   const ids = state.config.sources.filter(s => s.enabled).map(s => s.id);
   if (!ids.length) return;
   const protocol = location.protocol === "https:" ? "wss" : "ws";
@@ -238,7 +244,12 @@ function connectWebSocket() {
       renderPanelEvents(panel);
     }
   };
-  ws.onclose = () => { clearTimeout(state.reconnectTimer); state.reconnectTimer = setTimeout(connectWebSocket, 1500); };
+  ws.onclose = () => {
+    if (state.websocket !== ws) return;
+    state.websocket = null;
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = setTimeout(connectWebSocket, 1500);
+  };
 }
 
 async function refreshStatuses() {
@@ -291,13 +302,13 @@ function openSourceDialog(source=null) {
   $("#source-dialog").showModal();
 }
 
-function sourceFromForm() {
+function sourceFromForm(existing=null) {
   const kind = $("#source-kind").value;
   return {
     id:$("#source-id").value, name:$("#source-name").value.trim(), kind,
     path:$("#source-path").value.trim(), color:$("#source-color").value,
-    timezone_offset_hours:Number($("#source-offset").value), history_events:Number($("#source-history").value), poll_interval_ms:500, enabled:true,
-    parser:{kind:$("#source-parser").value, timestamp_regex:$("#source-regex").value.trim() || null, timestamp_format:$("#source-format").value.trim() || null, timestamp_fields:["timestamp","time","datetime","date","@timestamp"], level_fields:["level","severity","loglevel"]},
+    timezone_offset_hours:Number($("#source-offset").value), history_events:Number($("#source-history").value), poll_interval_ms:existing?.poll_interval_ms ?? 500, enabled:existing?.enabled ?? true,
+    parser:{kind:$("#source-parser").value, timestamp_regex:$("#source-regex").value.trim() || null, timestamp_format:$("#source-format").value.trim() || null, timestamp_fields:existing?.parser?.timestamp_fields || ["timestamp","time","datetime","date","@timestamp"], level_fields:existing?.parser?.level_fields || ["level","severity","loglevel"]},
     ssh: kind === "ssh" ? {host:$("#ssh-host").value.trim(), port:Number($("#ssh-port").value), username:$("#ssh-user").value.trim(), key_path:$("#ssh-key").value.trim() || null} : null,
   };
 }
@@ -368,8 +379,8 @@ function toggleSshFields() { $("#ssh-fields").classList.toggle("hidden", $("#sou
 $("#add-source").onclick = () => openSourceDialog();
 $("#source-form").addEventListener("submit", async event => {
   event.preventDefault();
-  const source = sourceFromForm();
-  const existing = state.config.sources.find(s => s.id === source.id);
+  const existing = state.config.sources.find(s => s.id === $("#source-id").value);
+  const source = sourceFromForm(existing);
   try {
     const saved = await api(existing ? `/api/sources/${source.id}` : "/api/sources", {method:existing ? "PUT" : "POST", body:JSON.stringify(source)});
     if (existing) Object.assign(existing, saved); else state.config.sources.push(saved);
@@ -386,7 +397,7 @@ $("#source-list").addEventListener("click", async event => {
     catch (error) { toast(error.message,"error"); }
   }
   if (button.dataset.action === "delete-source" && confirm(`Remove source '${source.name}'? The log file will not be changed.`)) {
-    try { await api(`/api/sources/${source.id}`, {method:"DELETE"}); state.config.sources=state.config.sources.filter(s=>s.id!==source.id); activeWorkspace().panels.forEach(p=>p.source_ids=p.source_ids.filter(id=>id!==source.id)); renderSources(); renderPanels(); connectWebSocket(); }
+    try { await api(`/api/sources/${source.id}`, {method:"DELETE"}); state.config.sources=state.config.sources.filter(s=>s.id!==source.id); state.config.workspaces.forEach(workspace=>workspace.panels.forEach(panel=>panel.source_ids=panel.source_ids.filter(id=>id!==source.id))); renderSources(); renderPanels(); connectWebSocket(); }
     catch (error) { toast(error.message,"error"); }
   }
 });
@@ -438,8 +449,10 @@ $("#panel-grid").addEventListener("drop", () => { $$(".log-panel").forEach((node
 $("#add-condition").onclick = () => addConditionRow();
 $("#filter-form").addEventListener("submit", async event => {
   event.preventDefault(); const panel=activeWorkspace().panels.find(p=>p.id===$("#filter-panel-id").value);
+  const original=panel.filter;
   panel.filter={logic:$("#filter-logic").value,negate:$("#filter-negate").checked,conditions:$$('#condition-list .condition-row').map(row=>({field:$(".condition-field",row).value,operator:$(".condition-operator",row).value,value:$(".condition-value",row).value,json_path:$(".condition-path",row).value||null,case_sensitive:$(".condition-case",row).checked})),groups:[]};
-  $("#filter-dialog").close(); await loadPanel(panel); scheduleWorkspaceSave();
+  if (await loadPanel(panel)) { $("#filter-dialog").close(); scheduleWorkspaceSave(); }
+  else panel.filter=original;
 });
 
 $(".dialog-cancel") && $$(".dialog-cancel").forEach(button => button.onclick = () => button.closest("dialog").close());

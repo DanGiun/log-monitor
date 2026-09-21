@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .aggregation import aggregate
 from .config import ConfigStore
-from .filters import FilterValidationError
+from .filters import FilterValidationError, validate_filter
 from .manager import SourceManager
 from .models import (
     AggregationRequest,
@@ -111,12 +111,37 @@ def create_app(
         def mutate(cfg: AppConfig) -> None:
             cfg.sources = [source if item.id == source_id else item for item in cfg.sources]
 
+        definition_changed = any(
+            (
+                previous.kind != source.kind,
+                previous.path != source.path,
+                previous.parser != source.parser,
+                previous.ssh != source.ssh,
+            )
+        )
+        runtime_changed = definition_changed or any(
+            (
+                previous.timezone_offset_hours != source.timezone_offset_hours,
+                previous.history_events != source.history_events,
+                previous.poll_interval_ms != source.poll_interval_ms,
+            )
+        )
+        restart_required = source.enabled and (not previous.enabled or runtime_changed)
+        if previous.enabled and (not source.enabled or runtime_changed):
+            await manager.stop(source.id)
         config_store.update(mutate)
+        if definition_changed:
+            await asyncio.to_thread(event_store.delete_source, source.id)
         if previous.timezone_offset_hours != source.timezone_offset_hours:
             await asyncio.to_thread(
                 event_store.shift_source, source.id, source.timezone_offset_hours
             )
-        await manager.restart(source)
+        if restart_required:
+            if not definition_changed:
+                await asyncio.to_thread(
+                    event_store.delete_latest, source.id, source.history_events
+                )
+            await manager.start(source)
         return source
 
     @app.delete("/api/sources/{source_id}", status_code=204)
@@ -249,6 +274,10 @@ def create_app(
         config = config_store.get()
         if any(item.id == saved.id or item.name == saved.name for item in config.saved_filters):
             raise HTTPException(409, "Filter id or name already exists")
+        try:
+            validate_filter(saved.filter)
+        except FilterValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
         config_store.update(lambda cfg: cfg.saved_filters.append(saved))
         return saved
 

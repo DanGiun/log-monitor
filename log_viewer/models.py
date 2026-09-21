@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
@@ -28,6 +29,17 @@ class ParserConfig(BaseModel):
         default_factory=lambda: ["timestamp", "time", "datetime", "date", "@timestamp"]
     )
     level_fields: list[str] = Field(default_factory=lambda: ["level", "severity", "loglevel"])
+
+    @field_validator("timestamp_regex")
+    @classmethod
+    def valid_timestamp_regex(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError(f"invalid timestamp regular expression: {exc}") from exc
+        return value
 
 
 class SSHConfig(BaseModel):

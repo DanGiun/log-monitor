@@ -70,3 +70,12 @@ def test_timestamp_boundaries_are_inclusive(event_factory):
     lower = FilterCondition(field="timestamp", operator="gte", value="2026-07-10T14:00:00+00:00")
     upper = FilterCondition(field="timestamp", operator="lte", value="2026-07-10T14:00:00+00:00")
     assert matches_filter(event_factory(), FilterGroup(conditions=[lower, upper]))
+
+
+@pytest.mark.unit
+def test_invalid_timestamp_boundary_is_rejected_before_execution():
+    group = FilterGroup(
+        conditions=[FilterCondition(field="timestamp", operator="gte", value="not-a-date")]
+    )
+    with pytest.raises(FilterValidationError, match="invalid timestamp value"):
+        validate_filter(group)

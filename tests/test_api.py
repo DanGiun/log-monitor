@@ -1,5 +1,6 @@
 
 import pytest
+import time
 from fastapi.testclient import TestClient
 
 from log_viewer.api import create_app
@@ -84,3 +85,90 @@ def test_websocket_endpoint_accepts_connection(client):
     test_client, _ = client
     with test_client.websocket_connect("/ws?source_ids=none") as websocket:
         assert websocket is not None
+
+
+@pytest.mark.acceptance
+def test_websocket_delivers_new_local_file_event(client, tmp_path):
+    test_client, _ = client
+    settings = test_client.get("/api/config").json()["settings"]
+    settings["sort_buffer_seconds"] = 0
+    assert test_client.put("/api/settings", json=settings).status_code == 200
+    path = tmp_path / "live.log"
+    path.write_text("", encoding="utf-8")
+    source = {
+        "id": "live",
+        "name": "live",
+        "path": str(path),
+        "history_events": 10,
+        "poll_interval_ms": 100,
+    }
+    assert test_client.post("/api/sources", json=source).status_code == 201
+    with test_client.websocket_connect("/ws?source_ids=live") as websocket:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write("2026-09-21 10:00:00 INFO streamed\n")
+        event = websocket.receive_json()
+    assert event["source_id"] == "live"
+    assert event["message"].endswith("INFO streamed")
+
+
+@pytest.mark.acceptance
+def test_invalid_timestamp_filter_returns_422(client, event_factory):
+    test_client, app = client
+    app.state.event_store.insert(event_factory())
+    response = test_client.post(
+        "/api/query",
+        json={
+            "filter": {
+                "logic": "AND",
+                "conditions": [
+                    {"field": "timestamp", "operator": "gte", "value": "not-a-date"}
+                ],
+                "groups": [],
+            }
+        },
+    )
+    assert response.status_code == 422
+    assert "timestamp value" in response.json()["detail"]
+
+
+@pytest.mark.acceptance
+def test_invalid_saved_filter_is_rejected(client):
+    test_client, _ = client
+    response = test_client.post(
+        "/api/filters",
+        json={
+            "id": "bad",
+            "name": "bad",
+            "filter": {
+                "logic": "AND",
+                "conditions": [{"field": "message", "operator": "regex", "value": "["}],
+                "groups": [],
+            },
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.acceptance
+def test_stop_start_does_not_duplicate_initial_history(client, tmp_path):
+    test_client, _ = client
+    path = tmp_path / "restart.log"
+    path.write_text(
+        "2026-09-21 10:00:00 INFO one\n"
+        "2026-09-21 10:00:01 INFO two\n"
+        "2026-09-21 10:00:02 INFO three\n",
+        encoding="utf-8",
+    )
+    source = {
+        "id": "restart",
+        "name": "restart",
+        "path": str(path),
+        "history_events": 3,
+    }
+    assert test_client.post("/api/sources", json=source).status_code == 201
+    time.sleep(0.05)
+    assert test_client.get("/api/health").json()["events"] == 3
+    assert test_client.post("/api/sources/restart/stop").status_code == 200
+    assert test_client.post("/api/sources/restart/start").status_code == 200
+    time.sleep(0.05)
+    assert test_client.get("/api/health").json()["events"] == 3

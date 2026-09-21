@@ -1,7 +1,15 @@
 import pytest
 from pydantic import ValidationError
 
-from log_viewer.models import AppConfig, AppSettings, SourceConfig, SourceKind, SSHConfig, Workspace
+from log_viewer.models import (
+    AppConfig,
+    AppSettings,
+    ParserConfig,
+    SourceConfig,
+    SourceKind,
+    SSHConfig,
+    Workspace,
+)
 
 
 @pytest.mark.unit
@@ -55,3 +63,9 @@ def test_disk_buffer_default_is_five_gibibytes():
 def test_disk_buffer_rejects_outside_configured_limits(value):
     with pytest.raises(ValidationError):
         AppSettings(disk_buffer_bytes=value)
+
+
+@pytest.mark.unit
+def test_invalid_custom_timestamp_regex_is_rejected_at_configuration_boundary():
+    with pytest.raises(ValidationError, match="timestamp regular expression"):
+        ParserConfig(timestamp_regex="[")

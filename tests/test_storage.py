@@ -69,3 +69,31 @@ def test_logical_buffer_prunes_oldest_events(tmp_path, event_factory):
 def test_cache_permissions_are_private(store):
     assert oct(store.cache_dir.stat().st_mode & 0o777) == "0o700"
     assert oct(store.path.stat().st_mode & 0o777) == "0o600"
+
+
+@pytest.mark.integration
+def test_selective_filter_scans_past_initial_prefetch(store, event_factory):
+    events = [event_factory(id="needle", sequence=0, message="needle")]
+    events.extend(
+        event_factory(id=f"noise-{index}", sequence=index, message="noise")
+        for index in range(1, 6001)
+    )
+    store.insert_many(events)
+    result = store.query(
+        [], FilterGroup(conditions=[FilterCondition(value="needle")]), limit=1000
+    )
+    assert [item.message for item in result] == ["needle"]
+
+
+@pytest.mark.integration
+def test_delete_latest_preserves_older_source_events(store, event_factory):
+    store.insert_many(
+        event_factory(id=f"event-{index}", sequence=index, message=f"event-{index}")
+        for index in range(5)
+    )
+    store.delete_latest("source-a", 2)
+    assert [item.message for item in store.query(["source-a"], FilterGroup())] == [
+        "event-0",
+        "event-1",
+        "event-2",
+    ]

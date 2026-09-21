@@ -35,6 +35,9 @@ def tail_utf8_lines(path: Path, event_hint: int) -> list[str]:
             chunk = handle.read(size)
             data[:0] = chunk
             newline_count += chunk.count(b"\n")
+        if position > 0:
+            newline = data.find(b"\n")
+            data = data[newline + 1 :] if newline >= 0 else bytearray()
         return bytes(data).decode("utf-8").splitlines()
 
 
@@ -80,8 +83,20 @@ class LocalFileFollower:
         self.offset = self.handle.tell()
         self.initialized = True
 
+    async def _emit(self, events: list[LogEvent]) -> None:
+        if events:
+            await self.on_events(events, self.assembler.timestamp_seen)
+
+    async def _flush_pending(self, include_partial: bool = False) -> None:
+        if include_partial and self.partial:
+            await self._emit(self.assembler.feed(self.partial))
+            self.partial = ""
+        await self._emit(self.assembler.flush())
+
     async def _consume(self, payload: bytes) -> None:
         if not payload:
+            if not self.partial:
+                await self._flush_pending()
             return
         text = self.decoder.decode(payload)
         text = self.partial + text
@@ -95,9 +110,7 @@ class LocalFileFollower:
         events: list[LogEvent] = []
         for line in lines:
             events.extend(self.assembler.feed(line))
-        events.extend(self.assembler.flush())
-        if events:
-            await self.on_events(events, self.assembler.timestamp_seen)
+        await self._emit(events)
 
     async def initialize(self) -> None:
         if not self.path.exists():
@@ -134,6 +147,7 @@ class LocalFileFollower:
                 payload = self.handle.read()
                 self.offset = self.handle.tell()
                 await self._consume(payload)
+                await self._flush_pending(include_partial=True)
                 await self._status("missing", f"File does not exist: {self.path}")
                 return
 
@@ -145,6 +159,7 @@ class LocalFileFollower:
                 old_payload = self.handle.read()
                 self.offset = self.handle.tell()
                 await self._consume(old_payload)
+                await self._flush_pending(include_partial=True)
                 self.decoder.reset()
                 self.partial = ""
                 self.assembler = EventAssembler(
@@ -153,6 +168,7 @@ class LocalFileFollower:
                 self._open_current(0)
                 detail = "Log rotation detected; finished old file and switched to replacement file"
             elif stat.st_size < self.offset:
+                await self._flush_pending(include_partial=True)
                 self.handle.seek(0)
                 self.offset = 0
                 self.decoder.reset()
@@ -181,6 +197,7 @@ class LocalFileFollower:
                 except asyncio.TimeoutError:
                     await self.poll_once()
         finally:
+            await self._flush_pending(include_partial=True)
             self._close_handle()
         await self._status("stopped")
 
@@ -215,6 +232,16 @@ class SSHFileFollower:
                 timestamp_seen=self.assembler.timestamp_seen,
             )
         )
+
+    async def _emit(self, events: list[LogEvent]) -> None:
+        if events:
+            await self.on_events(events, self.assembler.timestamp_seen)
+
+    async def _flush_pending(self, include_partial: bool = False) -> None:
+        if include_partial and self.partial:
+            await self._emit(self.assembler.feed(self.partial))
+            self.partial = ""
+        await self._emit(self.assembler.flush())
 
     def _connect(self) -> None:
         try:
@@ -309,11 +336,11 @@ class SSHFileFollower:
                     events: list[LogEvent] = []
                     for line in lines:
                         events.extend(self.assembler.feed(line))
-                    events.extend(self.assembler.flush())
-                    if events:
-                        await self.on_events(events, self.assembler.timestamp_seen)
+                    await self._emit(events)
                 elif self.initial_batch:
                     self.initial_batch = False
+                elif not self.partial:
+                    await self._flush_pending()
                 await self._set_status("running", detail)
                 try:
                     await asyncio.wait_for(
@@ -333,5 +360,6 @@ class SSHFileFollower:
                     await asyncio.wait_for(stop_event.wait(), timeout=delay)
                 except asyncio.TimeoutError:
                     pass
+        await self._flush_pending(include_partial=True)
         self._close()
         await self._set_status("stopped")

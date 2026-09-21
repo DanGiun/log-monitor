@@ -38,6 +38,24 @@ def test_multiline_continuation_belongs_to_previous_event():
 
 
 @pytest.mark.unit
+def test_embedded_iso_timestamps_remain_inside_tll_multiline_event():
+    lines = [
+        "2026-09-21 13:46:33.138 INFO tll.channel: Post message",
+        "header:",
+        "local_time: 2026-09-21T10:46:33.134877462",
+        "market_time: 1970-01-01T00:00:00",
+        "prices:",
+        "- price: 5.00000",
+        "  market_time: 2026-09-21T10:46:33.134877",
+        "2026-09-21 13:46:33.143 INFO ce.link: next message",
+    ]
+    events, _ = parse_lines(lines, "tll", ParserConfig())
+    assert len(events) == 2
+    assert "local_time: 2026-09-21T10:46:33.134877462" in events[0].message
+    assert "market_time: 1970-01-01T00:00:00" in events[0].message
+
+
+@pytest.mark.unit
 def test_lines_before_first_timestamp_stay_in_arrival_order():
     events, seen = parse_lines(["startup banner", "2026-07-10 15:00:00 INFO ready"], "s", ParserConfig())
     assert seen is True
