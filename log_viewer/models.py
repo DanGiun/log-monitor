@@ -185,7 +185,7 @@ class SourceStatus(BaseModel):
 class QueryRequest(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     filter: FilterGroup = Field(default_factory=FilterGroup)
-    limit: int = Field(default=1000, ge=1, le=20_000)
+    limit: int = Field(default=1000, ge=1, le=100_000)
     before_timestamp: datetime | None = None
     include_without_timestamp: bool = True
 

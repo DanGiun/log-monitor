@@ -51,6 +51,9 @@ The service does not open a browser. Browse to `http://127.0.0.1:8765`.
 - Temporary event cache: `~/.cache/log-viewer/session/`, directory mode `0700`; deleted between sessions.
 - Application diagnostic log: `~/.local/state/log-viewer/application.log`, rotated at 20 MiB by default.
 - Source log contents are not written into the persistent configuration or diagnostic report.
+- Each source's **Events retained** value is both the initial-history size and its rolling
+  event limit. When a new event exceeds that limit, the oldest event for that source is
+  removed from the temporary cache and browser panels.
 
 ## Adding SSH sources
 
@@ -91,7 +94,7 @@ python -m coverage run -m pytest -q
 python -m coverage report -m
 ```
 
-The delivered test suite contains 106 automated tests and currently reports 86% statement/branch coverage under the configured coverage calculation. See [docs/TEST_PLAN.md](docs/TEST_PLAN.md) and [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
+The delivered test suite contains 110 automated tests and currently reports 86% statement/branch coverage under the configured coverage calculation. See [docs/TEST_PLAN.md](docs/TEST_PLAN.md) and [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
 
 Generate deterministic QA fixtures, including multiline TLL-style payloads, JSON Lines,
 syslog, custom timestamps, malformed input, timestamp-less text, and Unicode:

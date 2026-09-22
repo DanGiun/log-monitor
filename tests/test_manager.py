@@ -4,7 +4,7 @@ import pytest
 
 from log_viewer.config import ConfigStore
 from log_viewer.manager import SourceManager
-from log_viewer.models import SourceConfig, SourceStatus
+from log_viewer.models import FilterGroup, SourceConfig, SourceStatus
 from log_viewer.storage import EventStore
 
 
@@ -42,6 +42,27 @@ async def test_manager_publishes_event_to_subscriber_and_store(manager_parts, ev
     assert received.id == event.id
     assert store.count() == 1
     await stream.aclose()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_manager_applies_configured_rolling_source_limit(manager_parts, event_factory):
+    config, store, manager = manager_parts
+    source = SourceConfig(id="source-a", name="a", path="/unused", history_events=2)
+    config.update(lambda cfg: cfg.sources.append(source))
+
+    await manager._on_events(
+        [
+            event_factory(id=f"event-{index}", sequence=index, message=f"event-{index}")
+            for index in range(3)
+        ],
+        True,
+    )
+
+    assert [event.message for event in store.query(["source-a"], FilterGroup())] == [
+        "event-1",
+        "event-2",
+    ]
 
 
 @pytest.mark.integration

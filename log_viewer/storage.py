@@ -5,9 +5,9 @@ import os
 import shutil
 import sqlite3
 import threading
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable
 
 from .filters import matches_filter, validate_filter
 from .models import FilterGroup, LogEvent
@@ -59,6 +59,12 @@ class EventStore:
                 "CREATE INDEX IF NOT EXISTS idx_events_source ON events(source_id, display_ts)"
             )
             self._connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_events_source_received
+                ON events(source_id, received_at, sequence, id)
+                """
+            )
+            self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL)"
             )
             self._connection.execute(
@@ -69,10 +75,18 @@ class EventStore:
     def _size(event: LogEvent) -> int:
         return len(event.model_dump_json().encode("utf-8"))
 
-    def insert(self, event: LogEvent) -> None:
-        self.insert_many([event])
+    def insert(
+        self,
+        event: LogEvent,
+        max_events_by_source: Mapping[str, int] | None = None,
+    ) -> None:
+        self.insert_many([event], max_events_by_source)
 
-    def insert_many(self, events: Iterable[LogEvent]) -> None:
+    def insert_many(
+        self,
+        events: Iterable[LogEvent],
+        max_events_by_source: Mapping[str, int] | None = None,
+    ) -> None:
         rows = []
         total = 0
         for event in events:
@@ -109,7 +123,48 @@ class EventStore:
             self._connection.execute(
                 "UPDATE metadata SET value = value + ? WHERE key = 'logical_bytes'", (total,)
             )
+            if max_events_by_source:
+                for source_id in {row[1] for row in rows}:
+                    limit = max_events_by_source.get(source_id)
+                    if limit is not None:
+                        self._trim_source_locked(source_id, limit)
             self._prune_locked()
+
+    def _trim_source_locked(self, source_id: str, max_events: int) -> int:
+        """Keep only the newest configured number of events for one source."""
+        if max_events < 1:
+            raise ValueError("max_events must be at least 1")
+        row = self._connection.execute(
+            "SELECT COUNT(*) FROM events WHERE source_id = ?", (source_id,)
+        ).fetchone()
+        excess = max(0, int(row[0]) - max_events) if row else 0
+        if not excess:
+            return 0
+        victims = self._connection.execute(
+            """
+            SELECT id, size_bytes FROM events
+            WHERE source_id = ?
+            ORDER BY received_at ASC, sequence ASC, id ASC
+            LIMIT ?
+            """,
+            (source_id, excess),
+        ).fetchall()
+        reclaimed = sum(int(row["size_bytes"]) for row in victims)
+        self._connection.executemany(
+            "DELETE FROM events WHERE id = ?", [(row["id"],) for row in victims]
+        )
+        self._connection.execute(
+            "UPDATE metadata SET value = MAX(0, value - ?) WHERE key = 'logical_bytes'",
+            (reclaimed,),
+        )
+        return len(victims)
+
+    def trim_source(self, source_id: str, max_events: int) -> int:
+        with self._lock, self._connection:
+            removed = self._trim_source_locked(source_id, max_events)
+            if removed:
+                self._connection.execute("PRAGMA incremental_vacuum(256)")
+            return removed
 
     def _prune_locked(self) -> None:
         current = self.logical_bytes()

@@ -76,7 +76,11 @@ class SourceManager:
             await self.start(source)
 
     async def _on_events(self, events: list[LogEvent], timestamp_seen: bool) -> None:
-        await asyncio.to_thread(self.event_store.insert_many, events)
+        limits = {
+            source.id: source.history_events
+            for source in self.config_store.get().sources
+        }
+        await asyncio.to_thread(self.event_store.insert_many, events, limits)
         for event in events:
             status = self.statuses.get(event.source_id)
             if status:

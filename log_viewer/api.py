@@ -136,6 +136,10 @@ def create_app(
             await asyncio.to_thread(
                 event_store.shift_source, source.id, source.timezone_offset_hours
             )
+        if previous.history_events != source.history_events:
+            await asyncio.to_thread(
+                event_store.trim_source, source.id, source.history_events
+            )
         if restart_required:
             if not definition_changed:
                 await asyncio.to_thread(

@@ -54,6 +54,26 @@ function eventSort(a, b) {
   return shiftedDate(a) - shiftedDate(b) || new Date(a.received_at) - new Date(b.received_at) || a.sequence - b.sequence || a.id.localeCompare(b.id);
 }
 
+function arrivalSort(a, b) {
+  return new Date(a.received_at) - new Date(b.received_at) || a.sequence - b.sequence || a.id.localeCompare(b.id);
+}
+
+function trimSourceWindow(list, sourceId) {
+  const limit = sourceById(sourceId)?.history_events;
+  if (!Number.isInteger(limit) || limit < 1) return;
+  const sourceEvents = list
+    .map((event, index) => ({event, index}))
+    .filter(item => item.event.source_id === sourceId);
+  const excess = sourceEvents.length - limit;
+  if (excess <= 0) return;
+  const indexes = sourceEvents
+    .sort((left, right) => arrivalSort(left.event, right.event))
+    .slice(0, excess)
+    .map(item => item.index)
+    .sort((a, b) => b - a);
+  indexes.forEach(index => list.splice(index, 1));
+}
+
 function insertSorted(list, event) {
   let low = 0, high = list.length;
   while (low < high) {
@@ -61,7 +81,7 @@ function insertSorted(list, event) {
     if (eventSort(list[mid], event) <= 0) low = mid + 1; else high = mid;
   }
   list.splice(low, 0, event);
-  if (list.length > 10000) list.splice(0, list.length - 10000);
+  trimSourceWindow(list, event.source_id);
 }
 
 function buildQuickFilter(panel) {
@@ -187,7 +207,13 @@ async function loadPanel(panel) {
   if (!panel.source_ids.length) return true;
   const root = document.querySelector(`[data-panel-id="${panel.id}"]`);
   try {
-    const events = await api("/api/query", {method:"POST", body:JSON.stringify({source_ids:panel.source_ids, filter:buildQuickFilter(panel), limit:2000, include_without_timestamp:panel.source_ids.length === 1})});
+    const filter = buildQuickFilter(panel);
+    const includeWithoutTimestamp = panel.source_ids.length === 1;
+    const batches = await Promise.all(panel.source_ids.map(sourceId => {
+      const limit = sourceById(sourceId)?.history_events || 1;
+      return api("/api/query", {method:"POST", body:JSON.stringify({source_ids:[sourceId], filter, limit, include_without_timestamp:includeWithoutTimestamp})});
+    }));
+    const events = batches.flat();
     state.panelEvents.set(panel.id, events.sort(eventSort));
     renderPanelEvents(panel, root);
     return true;

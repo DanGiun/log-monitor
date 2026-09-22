@@ -48,7 +48,7 @@ sequenceDiagram
     R->>P: UTF-8 lines
     P-->>R: logical LogEvent blocks
     R->>M: events and source status
-    M->>S: insert batch
+    M->>S: insert batch and enforce source limit
     M-->>W: publish to subscribers
 ```
 
@@ -74,9 +74,16 @@ session history.
 
 `SourceManager` creates at most one reader task for each source. Multiple panels consume the same parsed events, preventing duplicated file and SSH I/O.
 
-### Temporary SQLite buffer
+### Bounded temporary SQLite window
 
 SQLite provides an indexed disk-backed working set without introducing a separate database service. The database uses WAL mode and stores only the current session. A logical-byte counter enforces the configured limit; oldest events are evicted in batches when the limit is exceeded.
+
+Each source's `history_events` value is also its rolling retention limit. Initial
+loading keeps the newest N logical events, and every live insertion removes that
+source's oldest excess events in the same transaction. Browser panels enforce the
+same per-source limit. A panel combining multiple sources can therefore contain at
+most the sum of their configured limits. The global byte limit remains a secondary
+safety boundary for unusually large individual events.
 
 ### Stable event ordering
 
@@ -110,7 +117,7 @@ Source failures are isolated. They update UI state and trigger retry rather than
 
 ## Data model
 
-A source contains path/SSH location, parser settings, color, history count, poll interval, and time shift. Sources are global and can be referenced by any workspace.
+A source contains path/SSH location, parser settings, color, rolling event count, poll interval, and time shift. Sources are global and can be referenced by any workspace.
 
 A workspace stores grid columns and panels. A panel stores one or more source IDs, a filter tree, display settings, and aggregation mode.
 

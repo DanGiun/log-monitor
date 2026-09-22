@@ -1,14 +1,14 @@
 # Test report
 
-**Execution date:** 2026-09-21
+**Execution date:** 2026-09-22
 **Version:** 0.1.0
 **Platform:** Linux, Python 3.12
 **Command:** `python -m coverage run -m pytest -q`
 
 ## Result
 
-- Collected automated tests: **106**
-- Passed: **106**
+- Collected automated tests: **110**
+- Passed: **110**
 - Failed: **0**
 - Errors: **0**
 - Total coverage: **86%**
@@ -22,6 +22,7 @@
 - `AND`, `OR`, `NOT`, grep, regular expressions, level/source/JSON/time filtering.
 - Aggregation and dynamic-value normalization.
 - Disk eviction, source deletion, permissions, and timestamp recalculation.
+- Per-source rolling retention at N+1, independent multi-source limits, and live-file eviction.
 - Missing files, append, truncation, and rotation.
 - SSH strict host-key policy, key parameters, success and failure state transitions.
 - Source manager subscriptions and lifecycle.

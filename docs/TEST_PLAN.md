@@ -40,6 +40,7 @@ the exact resulting counts before filter assertions.
 - Disk buffer configuration: 100 MiB and 20 GiB boundaries through model constraints.
 - Port: 1–65535 through validation.
 - History and API query limits through Pydantic constraints.
+- Rolling source window at N and N+1 events, including independent limits for multiple sources.
 - File truncation where new size is smaller than the previous offset.
 
 ### Decision tables
@@ -87,7 +88,7 @@ Filter logic:
 - Security: localhost binding default, strict host key policy, private file permissions, no viewed content in diagnostics.
 - Reliability: source errors are nonfatal; cache and config writes are isolated.
 - Performance target: local events visible in approximately 500 ms plus configured sort delay; SSH events approximately 1.5 s under normal network conditions.
-- Capacity target: 30 configured sources, normally around 10 active, at several lines per second, with a configurable disk limit.
+- Capacity target: 30 configured sources, normally around 10 active, at several lines per second, with per-source rolling event limits and a global disk safety limit.
 
 ## Entry and exit criteria
 

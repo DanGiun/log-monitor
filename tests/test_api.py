@@ -112,6 +112,61 @@ def test_websocket_delivers_new_local_file_event(client, tmp_path):
 
 
 @pytest.mark.acceptance
+def test_source_history_is_a_rolling_limit_for_live_events(client, tmp_path):
+    test_client, _ = client
+    path = tmp_path / "rolling.log"
+    path.write_text(
+        "2026-09-21 10:00:00 INFO initial-0\n"
+        "2026-09-21 10:00:01 INFO initial-1\n"
+        "2026-09-21 10:00:02 INFO initial-2\n",
+        encoding="utf-8",
+    )
+    source = {
+        "id": "rolling",
+        "name": "rolling",
+        "path": str(path),
+        "history_events": 2,
+        "poll_interval_ms": 100,
+    }
+    assert test_client.post("/api/sources", json=source).status_code == 201
+
+    initial_deadline = time.monotonic() + 2
+    while time.monotonic() < initial_deadline:
+        initial = test_client.post(
+            "/api/query",
+            json={"source_ids": ["rolling"], "filter": {}, "limit": 10},
+        ).json()
+        if len(initial) == 2 and initial[-1]["message"].endswith("initial-2"):
+            break
+        time.sleep(0.05)
+
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            "2026-09-21 10:00:03 INFO live-3\n"
+            "2026-09-21 10:00:04 INFO live-4\n"
+        )
+
+    deadline = time.monotonic() + 2
+    messages = []
+    while time.monotonic() < deadline:
+        response = test_client.post(
+            "/api/query",
+            json={"source_ids": ["rolling"], "filter": {}, "limit": 10},
+        )
+        messages = [event["message"] for event in response.json()]
+        if len(messages) == 2 and all(
+            message.endswith(expected)
+            for message, expected in zip(messages, ("live-3", "live-4"), strict=True)
+        ):
+            break
+        time.sleep(0.05)
+
+    assert len(messages) == 2
+    assert messages[0].endswith("live-3")
+    assert messages[1].endswith("live-4")
+
+
+@pytest.mark.acceptance
 def test_invalid_timestamp_filter_returns_422(client, event_factory):
     test_client, app = client
     app.state.event_store.insert(event_factory())

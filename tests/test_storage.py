@@ -97,3 +97,36 @@ def test_delete_latest_preserves_older_source_events(store, event_factory):
         "event-1",
         "event-2",
     ]
+
+
+@pytest.mark.integration
+def test_source_event_limit_evicts_oldest_on_n_plus_one(store, event_factory):
+    for index in range(4):
+        store.insert_many(
+            [event_factory(id=f"event-{index}", sequence=index, message=f"event-{index}")],
+            {"source-a": 3},
+        )
+
+    assert [item.message for item in store.query(["source-a"], FilterGroup())] == [
+        "event-1",
+        "event-2",
+        "event-3",
+    ]
+    assert store.count() == 3
+
+
+@pytest.mark.integration
+def test_source_event_limits_are_independent(store, event_factory):
+    events = [
+        event_factory(id=f"a-{index}", source_id="a", sequence=index, message=f"a-{index}")
+        for index in range(4)
+    ]
+    events.extend(
+        event_factory(id=f"b-{index}", source_id="b", sequence=index, message=f"b-{index}")
+        for index in range(3)
+    )
+    store.insert_many(events, {"a": 2, "b": 1})
+
+    assert [item.message for item in store.query(["a"], FilterGroup())] == ["a-2", "a-3"]
+    assert [item.message for item in store.query(["b"], FilterGroup())] == ["b-2"]
+    assert store.count() == 3
