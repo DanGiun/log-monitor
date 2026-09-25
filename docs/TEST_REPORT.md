@@ -1,14 +1,14 @@
 # Test report
 
 **Execution date:** 2026-09-25
-**Version:** 0.2.0
+**Version:** 0.2.1
 **Platform:** Linux, Python 3.12
 **Command:** `python -m coverage run -m pytest -q`
 
 ## Result
 
-- Collected automated tests: **130**
-- Passed: **130**
+- Collected automated tests: **133**
+- Passed: **133**
 - Failed: **0**
 - Errors: **0**
 - Total coverage: **87%**
@@ -38,6 +38,8 @@
   preservation of a 100-event burst as one group with count 100.
 - Incident replay protection, retention from `last_seen`, private database
   permissions, workspace filtering, and persistence across application restart.
+- Timestamp-independent exact incident grouping across the full retention period,
+  while fuzzy grouping remains constrained to the 10-second burst window.
 
 ## Generated-data matrix
 

@@ -102,7 +102,7 @@ python -m coverage run -m pytest -q
 python -m coverage report -m
 ```
 
-The delivered test suite contains 130 automated tests and currently reports 87%
+The delivered test suite contains 133 automated tests and currently reports 87%
 statement/branch coverage under the configured coverage calculation. See
 [docs/TEST_PLAN.md](docs/TEST_PLAN.md),
 [docs/INCIDENTS_TEST_PLAN.md](docs/INCIDENTS_TEST_PLAN.md), and

@@ -24,10 +24,11 @@ source readers work.
 ### Grouping and spam protection
 
 - Incidents are grouped independently for each source.
-- Exact normalized messages are grouped first. UUIDs, IP addresses, hexadecimal
-  values, and numbers are replaced before comparison.
-- Otherwise, normalized messages with at least 70% similarity are grouped when
-  their occurrences are no more than 10 seconds apart.
+- Exact normalized messages are grouped for the full retention lifetime. Leading
+  timestamps are removed and UUIDs, IP addresses, hexadecimal values, and numbers
+  are replaced before comparison.
+- Otherwise, normalized messages with at least 70% similarity are grouped only
+  when their occurrences are no more than 10 seconds apart.
 - A group stores a representative message, source, level, first occurrence,
   latest occurrence, match reason, and occurrence count.
 - Repeated events increment the counter instead of creating rows or being silently
@@ -77,4 +78,3 @@ source readers work.
 - Notifications to external systems.
 - Per-workspace detection rules or retention periods.
 - Retrospective reclassification after keyword edits.
-

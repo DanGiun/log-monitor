@@ -18,6 +18,16 @@ from .models import IncidentRecord, IncidentSettings, LogEvent
 SIMILARITY_THRESHOLD = 0.70
 CORRELATION_WINDOW_SECONDS = 10
 WHITESPACE_RE = re.compile(r"\s+")
+LEADING_TIMESTAMP_RE = re.compile(
+    r"""^\s*\[?(?:
+        \d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?
+        (?:Z|[+-]\d{2}:?\d{2})?
+        |
+        (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+
+        \d{1,2}\s+\d{2}:\d{2}:\d{2}
+    )\]?\s*""",
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def incident_timestamp(event: LogEvent) -> datetime:
@@ -28,7 +38,8 @@ def incident_timestamp(event: LogEvent) -> datetime:
 
 
 def normalize_incident_message(message: str) -> str:
-    normalized = normalize_message(message).casefold()
+    without_timestamp = LEADING_TIMESTAMP_RE.sub("", message, count=1)
+    normalized = normalize_message(without_timestamp).casefold()
     return WHITESPACE_RE.sub(" ", normalized).strip()
 
 
@@ -118,6 +129,69 @@ class IncidentStore:
                 ON incident_occurrences(incident_id)
                 """
             )
+            self._migrate_normalized_messages_locked()
+
+    def _migrate_normalized_messages_locked(self) -> None:
+        """Re-normalize and merge exact legacy groups after rule changes."""
+        rows = self._connection.execute(
+            "SELECT * FROM incidents ORDER BY source_id, last_seen DESC, id"
+        ).fetchall()
+        for row in rows:
+            normalized = normalize_incident_message(row["message"])
+            if normalized != row["normalized_message"]:
+                self._connection.execute(
+                    "UPDATE incidents SET normalized_message = ? WHERE id = ?",
+                    (normalized, row["id"]),
+                )
+
+        rows = self._connection.execute(
+            "SELECT * FROM incidents ORDER BY source_id, normalized_message, last_seen DESC, id"
+        ).fetchall()
+        groups: dict[tuple[str, str], list[sqlite3.Row]] = {}
+        for row in rows:
+            groups.setdefault(
+                (row["source_id"], row["normalized_message"]), []
+            ).append(row)
+
+        for duplicates in groups.values():
+            if len(duplicates) < 2:
+                continue
+            keeper = duplicates[0]
+            duplicate_ids = [row["id"] for row in duplicates[1:]]
+            first_seen = min(datetime.fromisoformat(row["first_seen"]) for row in duplicates)
+            last_seen = max(datetime.fromisoformat(row["last_seen"]) for row in duplicates)
+            is_error = any(row["match_kind"] == "error" for row in duplicates)
+            matched_keyword = next(
+                (row["matched_keyword"] for row in duplicates if row["matched_keyword"]),
+                None,
+            )
+            placeholders = ",".join("?" for _ in duplicate_ids)
+            self._connection.execute(
+                f"UPDATE incident_occurrences SET incident_id = ? "
+                f"WHERE incident_id IN ({placeholders})",
+                [keeper["id"], *duplicate_ids],
+            )
+            self._connection.execute(
+                f"DELETE FROM incidents WHERE id IN ({placeholders})",
+                duplicate_ids,
+            )
+            self._connection.execute(
+                """
+                UPDATE incidents
+                SET first_seen = ?, last_seen = ?, count = ?, level = ?,
+                    match_kind = ?, matched_keyword = ?
+                WHERE id = ?
+                """,
+                (
+                    first_seen.isoformat(),
+                    last_seen.isoformat(),
+                    sum(row["count"] for row in duplicates),
+                    "ERROR" if is_error else keeper["level"],
+                    "error" if is_error else "keyword",
+                    None if is_error else matched_keyword,
+                    keeper["id"],
+                ),
+            )
 
     @staticmethod
     def _cutoff(retention_hours: int, now: datetime) -> datetime:
@@ -196,26 +270,35 @@ class IncidentStore:
 
         match_kind, matched_keyword = classification
         normalized = normalize_incident_message(event.message)
-        window_start = occurred_at - timedelta(seconds=CORRELATION_WINDOW_SECONDS)
-        candidates = self._connection.execute(
+        best = self._connection.execute(
             """
             SELECT * FROM incidents
-            WHERE source_id = ? AND last_seen >= ?
+            WHERE source_id = ? AND normalized_message = ?
             ORDER BY last_seen DESC, id DESC
-            LIMIT 200
+            LIMIT 1
             """,
-            (event.source_id, window_start.isoformat()),
-        ).fetchall()
-        best: sqlite3.Row | None = None
-        best_score = 0.0
-        for candidate in candidates:
-            candidate_last = datetime.fromisoformat(candidate["last_seen"])
-            if abs((candidate_last - occurred_at).total_seconds()) > CORRELATION_WINDOW_SECONDS:
-                continue
-            score = message_similarity(normalized, candidate["normalized_message"])
-            if score >= SIMILARITY_THRESHOLD and score > best_score:
-                best = candidate
-                best_score = score
+            (event.source_id, normalized),
+        ).fetchone()
+        window_start = occurred_at - timedelta(seconds=CORRELATION_WINDOW_SECONDS)
+        if best is None:
+            candidates = self._connection.execute(
+                """
+                SELECT * FROM incidents
+                WHERE source_id = ? AND last_seen >= ?
+                ORDER BY last_seen DESC, id DESC
+                LIMIT 200
+                """,
+                (event.source_id, window_start.isoformat()),
+            ).fetchall()
+            best_score = 0.0
+            for candidate in candidates:
+                candidate_last = datetime.fromisoformat(candidate["last_seen"])
+                if abs((candidate_last - occurred_at).total_seconds()) > CORRELATION_WINDOW_SECONDS:
+                    continue
+                score = message_similarity(normalized, candidate["normalized_message"])
+                if score >= SIMILARITY_THRESHOLD and score > best_score:
+                    best = candidate
+                    best_score = score
 
         if best is None:
             incident_id = uuid4().hex

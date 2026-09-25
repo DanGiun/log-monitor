@@ -6,6 +6,7 @@
 - Keyword matching is case-insensitive, supports substrings, and handles Unicode.
 - Empty keyword lists and duplicate/case-variant keyword validation.
 - Dynamic UUID/IP/hex/number normalization.
+- Leading ISO and syslog timestamps are excluded from the comparison mask.
 - Similarity boundaries immediately below, at, and above 70%.
 - Retention bounds: 1 hour and 8760 hours accepted; outside values rejected.
 - Stable occurrence fingerprinting for replay protection.
@@ -15,8 +16,9 @@
 - Create an incident from a qualifying event.
 - Ignore a non-qualifying event.
 - Aggregate exact repeats and update `count`/`last_seen`.
+- Aggregate exact normalized repeats across intervals longer than 10 seconds.
 - Aggregate ≥70% similar events inside 10 seconds.
-- Keep dissimilar events, different sources, and repeats outside 10 seconds separate.
+- Keep dissimilar events, different sources, and merely similar events outside 10 seconds separate.
 - Prefer counter aggregation over row spam for a 100-event burst.
 - Prevent replay of the same occurrence.
 - Retain the earliest `first_seen` and latest `last_seen` for out-of-order events.
@@ -63,4 +65,3 @@
 - A 100-event similar burst produces one incident with count 100.
 - Restart/rebuild persistence and retention cleanup are verified.
 - No regression in existing log viewing, filtering, workspaces, or source lifecycle.
-

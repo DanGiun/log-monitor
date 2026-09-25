@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -58,6 +59,17 @@ def test_normalization_removes_dynamic_values_before_similarity():
     assert message_similarity("abcdef", "abcxyz") < 0.70
 
 
+@pytest.mark.unit
+def test_normalization_excludes_leading_iso_and_syslog_timestamps():
+    messages = [
+        "2026-09-25 21:33:33.157 [ERROR] service: Connection refused",
+        "[2026-09-25T21:34:03.158+03:00] [ERROR] service: Connection refused",
+        "Sep 25 21:34:33 [ERROR] service: Connection refused",
+    ]
+    normalized = {normalize_incident_message(message) for message in messages}
+    assert normalized == {"[error] service: connection refused"}
+
+
 @pytest.mark.integration
 def test_non_incident_is_not_stored(tmp_path):
     store = IncidentStore(tmp_path / "incidents.sqlite3")
@@ -100,15 +112,67 @@ def test_similar_burst_is_grouped_and_frequency_is_preserved(tmp_path):
 
 
 @pytest.mark.integration
+def test_exact_message_with_different_timestamp_groups_beyond_burst_window(tmp_path):
+    store = IncidentStore(tmp_path / "incidents.sqlite3")
+    now = datetime.now(timezone.utc)
+    first_message = (
+        "2026-09-25 21:32:03.154 [ERROR] service: Failed to connect: Connection refused"
+    )
+    second_message = (
+        "2026-09-25 21:32:33.155 [ERROR] service: Failed to connect: Connection refused"
+    )
+    try:
+        store.record(
+            make_event(message=first_message, timestamp=now, sequence=1),
+            "Service",
+            IncidentSettings(),
+            now,
+        )
+        store.record(
+            make_event(
+                message=second_message,
+                timestamp=now + timedelta(seconds=30),
+                sequence=2,
+            ),
+            "Service",
+            IncidentSettings(),
+            now + timedelta(seconds=30),
+        )
+        incidents = store.list_for_sources(
+            ["source-a"], 24, now=now + timedelta(seconds=30)
+        )
+        assert len(incidents) == 1
+        assert incidents[0].count == 2
+        assert incidents[0].last_seen == now + timedelta(seconds=30)
+    finally:
+        store.close()
+
+
+@pytest.mark.integration
 def test_groups_do_not_cross_sources_or_correlation_window(tmp_path):
     store = IncidentStore(tmp_path / "incidents.sqlite3")
     now = datetime.now(timezone.utc)
     settings = IncidentSettings()
     try:
+        first_message = "Connection refused while contacting primary service"
+        similar_message = "Connection refused while contacting backup service"
+        assert normalize_incident_message(first_message) != normalize_incident_message(
+            similar_message
+        )
+        assert message_similarity(
+            normalize_incident_message(first_message),
+            normalize_incident_message(similar_message),
+        ) >= 0.70
         events = [
-            make_event(timestamp=now, sequence=1),
-            make_event(source_id="source-b", timestamp=now + timedelta(seconds=1), sequence=2),
+            make_event(message=first_message, timestamp=now, sequence=1),
             make_event(
+                source_id="source-b",
+                message=first_message,
+                timestamp=now + timedelta(seconds=1),
+                sequence=2,
+            ),
+            make_event(
+                message=similar_message,
                 timestamp=now + timedelta(seconds=CORRELATION_WINDOW_SECONDS + 1),
                 sequence=3,
             ),
@@ -176,5 +240,48 @@ def test_store_survives_reopen_and_filters_sources(tmp_path):
         if os.name != "nt":
             assert path.stat().st_mode & 0o777 == 0o600
             assert path.parent.stat().st_mode & 0o777 == 0o700
+    finally:
+        reopened.close()
+
+
+@pytest.mark.integration
+def test_reopen_migrates_and_merges_legacy_timestamp_groups(tmp_path):
+    path = tmp_path / "incidents.sqlite3"
+    now = datetime.now(timezone.utc)
+    store = IncidentStore(path)
+    store.close()
+    messages = [
+        "2026-09-25 21:32:03.154 [ERROR] service: Connection refused",
+        "2026-09-25 21:32:33.155 [ERROR] service: Connection refused",
+    ]
+    with sqlite3.connect(path) as connection:
+        for index, message in enumerate(messages):
+            stamp = now + timedelta(seconds=index * 30)
+            connection.execute(
+                """
+                INSERT INTO incidents(
+                    id, source_id, source_name, level, message, normalized_message,
+                    first_seen, last_seen, count, match_kind, matched_keyword
+                ) VALUES (?, 'source-a', 'Service', 'ERROR', ?, ?, ?, ?, ?, 'error', NULL)
+                """,
+                (
+                    f"legacy-{index}",
+                    message,
+                    f"legacy-normalization-{index}",
+                    stamp.isoformat(),
+                    stamp.isoformat(),
+                    index + 1,
+                ),
+            )
+
+    reopened = IncidentStore(path)
+    try:
+        incidents = reopened.list_for_sources(
+            ["source-a"], 24, now=now + timedelta(seconds=30)
+        )
+        assert len(incidents) == 1
+        assert incidents[0].count == 3
+        assert incidents[0].first_seen == now
+        assert incidents[0].last_seen == now + timedelta(seconds=30)
     finally:
         reopened.close()

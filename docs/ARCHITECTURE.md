@@ -138,11 +138,12 @@ twice; they cascade with their incident and contain no additional message body.
 
 Every reader already converges at `SourceManager._on_events`, so incident capture
 is attached there and does not duplicate file or SSH I/O. Exact `ERROR` levels or
-case-insensitive keyword matches qualify. UUIDs, IPs, hexadecimal values, and
-numbers are normalized, then messages from the same source within ten seconds are
-grouped at 70% similarity. The group retains frequency instead of silently
-discarding bursts. API listing derives its source set from the union of panels in
-the requested workspace.
+case-insensitive keyword matches qualify. Leading timestamps are removed; UUIDs,
+IPs, hexadecimal values, and numbers are normalized. Exact normalized messages
+from the same source share one group for the retention lifetime. Non-exact
+messages require at least 70% similarity and a ten-second correlation window. The
+group retains frequency instead of silently discarding bursts. API listing derives
+its source set from the union of panels in the requested workspace.
 
 ## Extension points
 
