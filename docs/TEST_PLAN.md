@@ -2,7 +2,7 @@
 
 ## Test objectives
 
-Verify that Log Viewer reads supported sources without modifying them, applies time shifts consistently, merges and filters events correctly, persists only configuration, remains available during source failures, and enforces security and resource boundaries.
+Verify that Log Viewer reads supported sources without modifying them, applies time shifts consistently, merges and filters events correctly, persists configuration and retention-controlled incident groups, remains available during source failures, and enforces security and resource boundaries.
 
 ## Generated test data
 
@@ -21,8 +21,8 @@ the exact resulting counts before filter assertions.
 
 ## Test levels
 
-- **Unit:** models, timestamp parsing, multiline assembly, filters, normalization, aggregations.
-- **Component/integration:** configuration persistence, SQLite buffer, local follower, SSH policy, source manager.
+- **Unit:** models, timestamp parsing, multiline assembly, filters, normalization, aggregations, incident classification and similarity.
+- **Component/integration:** configuration persistence, SQLite buffer, persistent incident store, local follower, SSH policy, source manager.
 - **Acceptance/API:** source/workspace lifecycle, error responses, query/aggregation behavior, diagnostics, web entry point, WebSocket connection.
 
 ## Test-design techniques

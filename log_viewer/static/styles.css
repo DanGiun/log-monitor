@@ -28,6 +28,9 @@ label > input:not([type=checkbox]), label > select { flex: 1; }
 .topbar { height: 54px; display: flex; align-items: center; gap: 9px; padding: 0 14px; background: #101827; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 9px; margin-right: 14px; }
 .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font-size: 12px; font-weight: 800; background: linear-gradient(135deg,#3978cf,#6ea8fe); }
+.section-tabs { display: flex; gap: 3px; margin-right: 8px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #0b121e; }
+.section-tab { padding: 5px 9px; border-color: transparent; background: transparent; }
+.section-tab.active { border-color: #3978cf; background: #285ea8; }
 .spacer { flex: 1; }
 .shell { display: grid; grid-template-columns: 250px 1fr; height: calc(100vh - 54px); }
 .sidebar { min-width: 0; background: #0f1724; border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -97,10 +100,40 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; }
 .agg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .agg-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .agg-table td, .agg-table th { border-bottom: 1px solid var(--line); padding: 5px; text-align: left; }
+.incidents-view { height: calc(100vh - 54px); overflow: auto; padding: 18px; }
+.incident-settings-card, .incident-results { max-width: 1180px; margin: 0 auto 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 16px; }
+.incident-settings-card { display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 18px 28px; align-items: start; }
+.incident-settings-card h1 { margin: 0 0 5px; font-size: 23px; }
+.incident-settings-card p { margin: 0; color: var(--muted); }
+.retention-form { display: flex; align-items: end; gap: 8px; }
+.retention-form label { display: grid; gap: 5px; }
+.retention-form input { width: 150px; }
+.keyword-settings { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 13px; }
+.keyword-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 30px; margin: 9px 0; }
+.keyword-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 4px 3px 10px; background: #0e1623; font-size: 13px; }
+.keyword-chip button { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; }
+.keyword-chip button:hover { color: var(--danger); background: #3a1d27; }
+.keyword-form { display: flex; gap: 7px; max-width: 470px; }
+.keyword-form input { flex: 1; }
+.incident-results { padding: 0; overflow: hidden; }
+.incident-results-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.incident-results-head div { display: flex; flex-direction: column; gap: 3px; }
+.incident-results-head span { color: var(--muted); font-size: 12px; }
+.incident-list { padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.incident-card { border: 1px solid var(--line); border-left: 4px solid var(--incident-color); border-radius: 8px; background: #0f1724; overflow: hidden; }
+.incident-card-head { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.incident-source { font-weight: 700; }
+.incident-reason { border-radius: 999px; padding: 2px 7px; font-size: 11px; background: #2b3444; color: var(--muted); }
+.incident-reason.error { background: #5a2630; color: #ffdce0; }
+.incident-count { margin-left: auto; color: var(--warn); font-variant-numeric: tabular-nums; }
+.incident-message { margin: 0; padding: 10px; color: var(--text); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+.incident-times { display: flex; gap: 22px; padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 @media (max-width: 900px) {
   .shell { grid-template-columns: 190px 1fr; }
   .panel-grid { grid-template-columns: 1fr !important; }
   .topbar label { display: none; }
+  .incident-settings-card { grid-template-columns: 1fr; }
+  .retention-form, .keyword-settings { grid-column: 1; }
 }
 .saved-filter-bar { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 7px; }
 .selected-row { outline: 1px solid var(--accent); background: #24405b !important; }

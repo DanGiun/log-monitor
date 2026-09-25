@@ -9,18 +9,22 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">LV</span><strong>Log Viewer</strong></div>
+    <nav class="section-tabs" aria-label="Application sections">
+      <button id="show-logs" class="section-tab active" type="button">Logs</button>
+      <button id="show-incidents" class="section-tab" type="button">Incidents</button>
+    </nav>
     <label>Workspace <select id="workspace-select"></select></label>
     <button id="new-workspace">New</button>
     <button id="duplicate-workspace">Duplicate</button>
     <button id="delete-workspace" class="danger ghost">Delete</button>
     <span class="spacer"></span>
-    <label>Columns <select id="grid-columns"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
-    <button id="add-panel" class="primary">+ Panel</button>
+    <label class="logs-only">Columns <select id="grid-columns"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+    <button id="add-panel" class="primary logs-only">+ Panel</button>
     <button id="open-settings">Settings</button>
     <a class="button ghost" href="/api/diagnostics">Diagnostics</a>
   </header>
 
-  <div class="shell">
+  <div id="logs-view" class="shell">
     <aside class="sidebar">
       <div class="sidebar-title"><strong>Sources</strong><button id="add-source" class="primary small">+ Add</button></div>
       <div id="source-list" class="source-list"></div>
@@ -31,6 +35,37 @@
     </aside>
     <main id="panel-grid" class="panel-grid"></main>
   </div>
+
+  <main id="incidents-view" class="incidents-view hidden">
+    <section class="incident-settings-card">
+      <div>
+        <h1>Incidents</h1>
+        <p>ERROR events and messages matching configured keywords. Similar bursts are grouped per source.</p>
+      </div>
+      <form id="incident-retention-form" class="retention-form">
+        <label>Keep after last occurrence (hours)
+          <input id="incident-retention" type="number" min="1" max="8760" required>
+        </label>
+        <button class="primary" type="submit">Save</button>
+      </form>
+      <div class="keyword-settings">
+        <strong>Additional incident keywords</strong>
+        <div id="incident-keywords" class="keyword-list"></div>
+        <form id="incident-keyword-form" class="keyword-form">
+          <input id="incident-keyword" maxlength="100" placeholder="For example: Reject" required>
+          <button type="submit">+ Add keyword</button>
+        </form>
+        <p class="hint">Matching is case-insensitive. ERROR level is always considered an incident.</p>
+      </div>
+    </section>
+    <section class="incident-results">
+      <div class="incident-results-head">
+        <div><strong id="incident-summary">0 incidents</strong><span id="incident-workspace-name"></span></div>
+        <button id="refresh-incidents" type="button">Refresh</button>
+      </div>
+      <div id="incident-list" class="incident-list"></div>
+    </section>
+  </main>
 
   <div id="toast-container" class="toast-container"></div>
 

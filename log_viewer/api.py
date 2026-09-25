@@ -17,12 +17,15 @@ from . import __version__
 from .aggregation import aggregate
 from .config import ConfigStore
 from .filters import FilterValidationError, validate_filter
+from .incidents import IncidentStore
 from .manager import SourceManager
 from .models import (
     AggregationRequest,
     AppConfig,
     AppSettings,
     DiagnosticReport,
+    IncidentRecord,
+    IncidentSettings,
     QueryRequest,
     SavedFilter,
     SourceConfig,
@@ -37,13 +40,17 @@ def create_app(
     config_path: Path | None = None,
     cache_dir: Path | None = None,
     cleanup_cache: bool = True,
+    incident_path: Path | None = None,
 ) -> FastAPI:
     config_store = ConfigStore(config_path)
     target_cache = cache_dir or Path.home() / ".cache" / "log-viewer" / "session"
     if cleanup_cache and target_cache.exists():
         shutil.rmtree(target_cache, ignore_errors=True)
     event_store = EventStore(target_cache, config_store.get().settings.disk_buffer_bytes)
-    manager = SourceManager(config_store, event_store)
+    target_incidents = incident_path or config_store.path.parent / "incidents.sqlite3"
+    incident_store = IncidentStore(target_incidents)
+    incident_store.cleanup(config_store.get().incident_settings.retention_hours)
+    manager = SourceManager(config_store, event_store, incident_store)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -53,10 +60,12 @@ def create_app(
         finally:
             await manager.stop_all()
             event_store.close(cleanup=cleanup_cache)
+            incident_store.close()
 
     app = FastAPI(title="Log Viewer", version=__version__, lifespan=lifespan)
     app.state.config_store = config_store
     app.state.event_store = event_store
+    app.state.incident_store = incident_store
     app.state.manager = manager
 
     static_dir = Path(__file__).parent / "static"
@@ -73,6 +82,7 @@ def create_app(
             "version": __version__,
             "cache_bytes": event_store.logical_bytes(),
             "events": event_store.count(),
+            "incidents": incident_store.count(),
         }
 
     @app.get("/api/config", response_model=AppConfig)
@@ -84,6 +94,39 @@ def create_app(
         config_store.update(lambda cfg: setattr(cfg, "settings", settings))
         event_store.max_bytes = settings.disk_buffer_bytes
         return settings
+
+    @app.put("/api/incident-settings", response_model=IncidentSettings)
+    async def update_incident_settings(settings: IncidentSettings) -> IncidentSettings:
+        config_store.update(lambda cfg: setattr(cfg, "incident_settings", settings))
+        await asyncio.to_thread(incident_store.cleanup, settings.retention_hours)
+        return settings
+
+    @app.get("/api/incidents", response_model=list[IncidentRecord])
+    async def incidents(
+        workspace_id: str | None = None,
+        limit: int = Query(default=1000, ge=1, le=10_000),
+    ) -> list[IncidentRecord]:
+        config = config_store.get()
+        target_workspace_id = workspace_id or config.active_workspace_id
+        workspace = next(
+            (item for item in config.workspaces if item.id == target_workspace_id),
+            None,
+        )
+        if workspace is None:
+            raise HTTPException(404, "Workspace not found")
+        source_ids = sorted(
+            {
+                source_id
+                for panel in workspace.panels
+                for source_id in panel.source_ids
+            }
+        )
+        return await asyncio.to_thread(
+            incident_store.list_for_sources,
+            source_ids,
+            config.incident_settings.retention_hours,
+            limit,
+        )
 
     @app.get("/api/statuses")
     async def statuses():

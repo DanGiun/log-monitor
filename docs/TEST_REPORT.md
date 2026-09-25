@@ -1,17 +1,17 @@
 # Test report
 
-**Execution date:** 2026-09-22
-**Version:** 0.1.0
+**Execution date:** 2026-09-25
+**Version:** 0.2.0
 **Platform:** Linux, Python 3.12
 **Command:** `python -m coverage run -m pytest -q`
 
 ## Result
 
-- Collected automated tests: **110**
-- Passed: **110**
+- Collected automated tests: **130**
+- Passed: **130**
 - Failed: **0**
 - Errors: **0**
-- Total coverage: **86%**
+- Total coverage: **87%**
 - Required coverage threshold: **75%**
 
 ## Covered risk areas
@@ -33,6 +33,11 @@
 - TLL multiline blocks with embedded timestamps.
 - Multiline events split across polling cycles.
 - Stop/start history deduplication and UTF-8 tail boundaries.
+- Incident classification by exact `ERROR` level and editable keywords.
+- Dynamic-value normalization, fuzzy burst grouping, per-source separation, and
+  preservation of a 100-event burst as one group with count 100.
+- Incident replay protection, retention from `last_seen`, private database
+  permissions, workspace filtering, and persistence across application restart.
 
 ## Generated-data matrix
 
@@ -55,14 +60,17 @@ events and the expected 12 `ERROR` events.
 Eleven defects were specified and fixed. See [BUGFIX_SPEC.md](BUGFIX_SPEC.md) for
 severity, evidence, acceptance criteria, and test traceability.
 
+The incident register was implemented as new functionality according to
+[INCIDENTS_SPEC.md](INCIDENTS_SPEC.md); its coverage matrix is documented in
+[INCIDENTS_TEST_PLAN.md](INCIDENTS_TEST_PLAN.md).
+
 ## Residual risks
 
 - Real SSH integration depends on server-specific SFTP behavior and should be validated against each target environment.
-- The cloud browser available in this execution could not reach the local
-  `localhost` server (`ERR_BLOCKED_BY_CLIENT`). UI network contracts, state
-  transitions, escaping paths, and JavaScript syntax were verified, but a fresh
-  post-fix visual click-through should still be run in a browser that can reach
-  the local application.
+- The execution browser is isolated from locally started processes. UI network
+  contracts, state transitions, escaping paths, static packaging, and JavaScript
+  syntax were verified; a visual click-through remains part of deployment-host
+  smoke testing.
 - Very large sustained throughput beyond the agreed several-lines-per-second profile requires a dedicated endurance test in the deployment environment.
 
 ## Additional verification
@@ -71,6 +79,7 @@ severity, evidence, acceptance criteria, and test traceability.
   Ruff 0.16, which reports legacy style/modernization findings already present
   in the repository; no automatic style rewrite was applied because it is
   outside the bug-fix scope.
+- `ruff check --select E4,E7,E9,F log_viewer tests`: passed.
 - `node --check log_viewer/static/app.js`: passed.
 - Deterministic generator execution and 307-event API matrix: passed.
 - Wheel build succeeded; Python modules and all three static UI assets are present.

@@ -1,2 +1,12 @@
 .idea
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/
 tmp1_e7u8h6
+dev-config

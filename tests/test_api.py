@@ -1,9 +1,11 @@
 
 import pytest
 import time
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from log_viewer.api import create_app
+from log_viewer.models import IncidentSettings, LogEvent
 
 
 @pytest.fixture
@@ -17,7 +19,9 @@ def client(tmp_path):
 def test_health_and_root_are_available(client):
     test_client, _ = client
     assert test_client.get("/api/health").json()["status"] == "ok"
-    assert "Log Viewer" in test_client.get("/").text
+    root = test_client.get("/").text
+    assert "Log Viewer" in root
+    assert 'id="incidents-view"' in root
 
 
 @pytest.mark.acceptance
@@ -227,3 +231,109 @@ def test_stop_start_does_not_duplicate_initial_history(client, tmp_path):
     assert test_client.post("/api/sources/restart/start").status_code == 200
     time.sleep(0.05)
     assert test_client.get("/api/health").json()["events"] == 3
+
+
+def _incident_event(source_id, message, timestamp, sequence=1):
+    return LogEvent(
+        source_id=source_id,
+        display_timestamp=timestamp,
+        received_at=timestamp,
+        level="ERROR",
+        message=message,
+        raw=message,
+        sequence=sequence,
+    )
+
+
+@pytest.mark.acceptance
+def test_incidents_are_filtered_by_workspace_panel_sources(client):
+    test_client, app = client
+    workspace = {
+        "id": "ops",
+        "name": "Operations",
+        "panels": [
+            {
+                "id": "panel-a",
+                "title": "A",
+                "source_ids": ["source-a"],
+            }
+        ],
+        "grid_columns": 1,
+    }
+    assert test_client.post("/api/workspaces", json=workspace).status_code == 201
+    now = datetime.now(timezone.utc)
+    app.state.incident_store.record(
+        _incident_event("source-a", "visible failure", now),
+        "Service A",
+        IncidentSettings(),
+        now,
+    )
+    app.state.incident_store.record(
+        _incident_event("source-b", "hidden failure", now, 2),
+        "Service B",
+        IncidentSettings(),
+        now,
+    )
+
+    response = test_client.get("/api/incidents?workspace_id=ops")
+    assert response.status_code == 200
+    assert [item["source_id"] for item in response.json()] == ["source-a"]
+    assert test_client.get("/api/incidents?workspace_id=missing").status_code == 404
+
+
+@pytest.mark.acceptance
+def test_incident_settings_are_persisted_and_shorter_retention_cleans_store(client):
+    test_client, app = client
+    now = datetime.now(timezone.utc)
+    app.state.incident_store.record(
+        _incident_event("source-a", "old failure", now - timedelta(hours=2)),
+        "Service A",
+        IncidentSettings(retention_hours=24),
+        now,
+    )
+    settings = {"retention_hours": 1, "keywords": []}
+    response = test_client.put("/api/incident-settings", json=settings)
+    assert response.status_code == 200
+    assert response.json() == settings
+    assert test_client.get("/api/config").json()["incident_settings"] == settings
+    assert app.state.incident_store.count() == 0
+
+
+@pytest.mark.acceptance
+def test_invalid_incident_settings_do_not_mutate_config(client):
+    test_client, _ = client
+    before = test_client.get("/api/config").json()["incident_settings"]
+    response = test_client.put(
+        "/api/incident-settings",
+        json={"retention_hours": 0, "keywords": ["Reject", "reject"]},
+    )
+    assert response.status_code == 422
+    assert test_client.get("/api/config").json()["incident_settings"] == before
+
+
+@pytest.mark.acceptance
+def test_incidents_survive_application_restart(tmp_path):
+    config_path = tmp_path / "config" / "config.json"
+    cache_path = tmp_path / "cache"
+    workspace = {
+        "id": "ops",
+        "name": "Operations",
+        "panels": [{"id": "panel-a", "title": "A", "source_ids": ["source-a"]}],
+        "grid_columns": 1,
+    }
+    now = datetime.now(timezone.utc)
+    first_app = create_app(config_path, cache_path)
+    with TestClient(first_app) as first:
+        assert first.post("/api/workspaces", json=workspace).status_code == 201
+        first_app.state.incident_store.record(
+            _incident_event("source-a", "persistent failure", now),
+            "Service A",
+            IncidentSettings(),
+            now,
+        )
+
+    second_app = create_app(config_path, cache_path)
+    with TestClient(second_app) as second:
+        response = second.get("/api/incidents?workspace_id=ops")
+        assert response.status_code == 200
+        assert response.json()[0]["message"] == "persistent failure"

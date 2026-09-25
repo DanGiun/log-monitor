@@ -1,8 +1,10 @@
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 
 from log_viewer.config import ConfigStore
+from log_viewer.incidents import IncidentStore
 from log_viewer.manager import SourceManager
 from log_viewer.models import FilterGroup, SourceConfig, SourceStatus
 from log_viewer.storage import EventStore
@@ -89,3 +91,31 @@ async def test_sync_sources_starts_and_removes_tasks(manager_parts, tmp_path):
     config.update(lambda cfg: setattr(cfg, "sources", []))
     await manager.sync_sources()
     assert source.id not in manager.tasks
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_manager_records_incident_at_the_shared_ingestion_point(tmp_path, event_factory):
+    config = ConfigStore(tmp_path / "config.json")
+    event_store = EventStore(tmp_path / "cache", 10_000_000)
+    incident_store = IncidentStore(tmp_path / "incidents.sqlite3")
+    source = SourceConfig(id="source-a", name="API service", path="/unused")
+    config.update(lambda cfg: cfg.sources.append(source))
+    manager = SourceManager(config, event_store, incident_store)
+    now = datetime.now(timezone.utc)
+    event = event_factory(
+        display_timestamp=now,
+        original_timestamp=now,
+        received_at=now,
+        level="ERROR",
+        message="database unavailable",
+        raw="database unavailable",
+    )
+    try:
+        await manager._on_events([event], True)
+        incident = incident_store.list_for_sources(["source-a"], 24, now=now)[0]
+        assert incident.source_name == "API service"
+        assert incident.message == "database unavailable"
+    finally:
+        incident_store.close()
+        event_store.close()

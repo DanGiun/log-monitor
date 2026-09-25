@@ -6,6 +6,10 @@ const state = {
   reconnectTimer: null,
   saveTimer: null,
   statusTimer: null,
+  incidentTimer: null,
+  incidents: [],
+  incidentsLoading: false,
+  activeSection: "logs",
 };
 
 const $ = (selector, root=document) => root.querySelector(selector);
@@ -140,6 +144,86 @@ async function bootstrap() {
   connectWebSocket();
   clearInterval(state.statusTimer);
   state.statusTimer = setInterval(refreshStatuses, 1500);
+  renderIncidentSettings();
+}
+
+function showSection(section) {
+  state.activeSection = section;
+  const showingIncidents = section === "incidents";
+  $("#logs-view").classList.toggle("hidden", showingIncidents);
+  $("#incidents-view").classList.toggle("hidden", !showingIncidents);
+  $("#show-logs").classList.toggle("active", !showingIncidents);
+  $("#show-incidents").classList.toggle("active", showingIncidents);
+  $$(".logs-only").forEach(node => node.classList.toggle("hidden", showingIncidents));
+  clearInterval(state.incidentTimer);
+  state.incidentTimer = null;
+  if (showingIncidents) {
+    renderIncidentSettings();
+    loadIncidents();
+    state.incidentTimer = setInterval(loadIncidents, 2000);
+  }
+}
+
+function renderIncidentSettings() {
+  const settings = state.config?.incident_settings;
+  if (!settings) return;
+  $("#incident-retention").value = settings.retention_hours;
+  const root = $("#incident-keywords");
+  root.innerHTML = settings.keywords.length
+    ? settings.keywords.map(keyword => `<span class="keyword-chip">${escapeHtml(keyword)}<button type="button" data-keyword="${escapeHtml(keyword)}" aria-label="Remove ${escapeHtml(keyword)}">×</button></span>`).join("")
+    : '<span class="hint">No additional keywords configured.</span>';
+}
+
+async function loadIncidents() {
+  if (state.incidentsLoading || state.activeSection !== "incidents") return;
+  state.incidentsLoading = true;
+  try {
+    state.incidents = await api(`/api/incidents?workspace_id=${encodeURIComponent(activeWorkspace().id)}`);
+    renderIncidents();
+  } catch (error) {
+    toast(`Could not load incidents: ${error.message}`, "error");
+  } finally {
+    state.incidentsLoading = false;
+  }
+}
+
+function renderIncidents() {
+  const workspace = activeWorkspace();
+  const totalOccurrences = state.incidents.reduce((sum, incident) => sum + incident.count, 0);
+  $("#incident-summary").textContent = `${state.incidents.length} incident groups · ${totalOccurrences} occurrences`;
+  $("#incident-workspace-name").textContent = `Workspace: ${workspace.name}`;
+  const root = $("#incident-list");
+  if (!workspace.panels.some(panel => panel.source_ids.length)) {
+    root.innerHTML = '<div class="empty-state"><h2>No sources in this workspace</h2><p>Add sources to a panel to see their incidents here.</p></div>';
+    return;
+  }
+  if (!state.incidents.length) {
+    root.innerHTML = '<div class="empty-state"><h2>No active incidents</h2><p>No matching events were recorded during the retention period.</p></div>';
+    return;
+  }
+  root.innerHTML = state.incidents.map(incident => {
+    const source = sourceById(incident.source_id);
+    const color = source?.color || "#999999";
+    const reason = incident.match_kind === "error" ? "ERROR" : `Keyword: ${incident.matched_keyword || "—"}`;
+    return `<article class="incident-card" style="--incident-color:${color}">
+      <div class="incident-card-head">
+        <span class="incident-source" title="${escapeHtml(source?.path || incident.source_id)}">${escapeHtml(incident.source_name)}</span>
+        <span class="incident-reason ${incident.match_kind}">${escapeHtml(reason)}</span>
+        <strong class="incident-count" title="Occurrences in this group">×${incident.count}</strong>
+      </div>
+      <pre class="incident-message">${escapeHtml(incident.message)}</pre>
+      <div class="incident-times"><span>First: ${formatTimestamp(incident.first_seen)}</span><span>Last: ${formatTimestamp(incident.last_seen)}</span></div>
+    </article>`;
+  }).join("");
+}
+
+async function saveIncidentSettings(settings) {
+  state.config.incident_settings = await api("/api/incident-settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+  renderIncidentSettings();
+  await loadIncidents();
 }
 
 function renderWorkspaces() {
@@ -520,10 +604,39 @@ $("#aggregation-dialog").addEventListener("change", event => {
   if (visiblePanel) { visiblePanel.aggregation_after_filter=event.target.checked; scheduleWorkspaceSave(); }
 });
 
-$("#workspace-select").onchange = async event => { state.config.active_workspace_id=event.target.value; await api(`/api/active-workspace/${event.target.value}`,{method:"PUT"}); renderWorkspaces(); renderPanels(); };
+$("#workspace-select").onchange = async event => { state.config.active_workspace_id=event.target.value; await api(`/api/active-workspace/${event.target.value}`,{method:"PUT"}); renderWorkspaces(); renderPanels(); if(state.activeSection==="incidents")await loadIncidents(); };
 $("#grid-columns").onchange = event => { activeWorkspace().grid_columns=Number(event.target.value); renderPanels(); scheduleWorkspaceSave(); };
 $("#new-workspace").onclick = async () => { const name=prompt("Workspace name"); if(!name)return; const workspace={id:crypto.randomUUID().replaceAll("-",""),name,panels:[],grid_columns:2}; try{await api("/api/workspaces",{method:"POST",body:JSON.stringify(workspace)});state.config.workspaces.push(workspace);state.config.active_workspace_id=workspace.id;await api(`/api/active-workspace/${workspace.id}`,{method:"PUT"});renderWorkspaces();renderPanels();}catch(e){toast(e.message,"error");} };
 $("#duplicate-workspace").onclick = async () => { const current=activeWorkspace(),name=prompt("Copy name",`${current.name} copy`);if(!name)return;const copy=structuredClone(current);copy.id=crypto.randomUUID().replaceAll("-","");copy.name=name;copy.panels.forEach(p=>p.id=crypto.randomUUID().replaceAll("-",""));try{await api("/api/workspaces",{method:"POST",body:JSON.stringify(copy)});state.config.workspaces.push(copy);renderWorkspaces();}catch(e){toast(e.message,"error");} };
 $("#delete-workspace").onclick = async () => { const w=activeWorkspace();if(w.id==="default"){toast("The default workspace cannot be deleted","error");return;}if(!confirm(`Delete workspace '${w.name}'?`))return;try{await api(`/api/workspaces/${w.id}`,{method:"DELETE"});state.config.workspaces=state.config.workspaces.filter(x=>x.id!==w.id);state.config.active_workspace_id="default";renderWorkspaces();renderPanels();}catch(e){toast(e.message,"error");} };
+
+$("#show-logs").onclick = () => showSection("logs");
+$("#show-incidents").onclick = () => showSection("incidents");
+$("#refresh-incidents").onclick = loadIncidents;
+$("#incident-retention-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const settings = {...state.config.incident_settings, retention_hours:Number($("#incident-retention").value)};
+  try { await saveIncidentSettings(settings); toast("Incident retention saved"); }
+  catch (error) { toast(error.message, "error"); }
+});
+$("#incident-keyword-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const keyword = $("#incident-keyword").value.trim();
+  if (!keyword) return;
+  if (state.config.incident_settings.keywords.some(item => item.toLowerCase() === keyword.toLowerCase())) {
+    toast("This keyword already exists", "error");
+    return;
+  }
+  const settings = {...state.config.incident_settings, keywords:[...state.config.incident_settings.keywords, keyword]};
+  try { await saveIncidentSettings(settings); $("#incident-keyword").value=""; toast("Incident keyword added"); }
+  catch (error) { toast(error.message, "error"); }
+});
+$("#incident-keywords").addEventListener("click", async event => {
+  const button = event.target.closest("button[data-keyword]");
+  if (!button) return;
+  const settings = {...state.config.incident_settings, keywords:state.config.incident_settings.keywords.filter(item => item !== button.dataset.keyword)};
+  try { await saveIncidentSettings(settings); toast("Incident keyword removed"); }
+  catch (error) { toast(error.message, "error"); }
+});
 
 bootstrap().catch(error => toast(`Startup failed: ${error.message}`, "error"));

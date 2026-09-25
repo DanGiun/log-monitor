@@ -6,15 +6,22 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 from .config import ConfigStore
+from .incidents import IncidentStore
 from .models import LogEvent, SourceConfig, SourceKind, SourceStatus
 from .readers import LocalFileFollower, SSHFileFollower
 from .storage import EventStore
 
 
 class SourceManager:
-    def __init__(self, config_store: ConfigStore, event_store: EventStore) -> None:
+    def __init__(
+        self,
+        config_store: ConfigStore,
+        event_store: EventStore,
+        incident_store: IncidentStore | None = None,
+    ) -> None:
         self.config_store = config_store
         self.event_store = event_store
+        self.incident_store = incident_store
         self.tasks: dict[str, asyncio.Task] = {}
         self.stop_events: dict[str, asyncio.Event] = {}
         self.statuses: dict[str, SourceStatus] = {}
@@ -76,11 +83,20 @@ class SourceManager:
             await self.start(source)
 
     async def _on_events(self, events: list[LogEvent], timestamp_seen: bool) -> None:
+        config = self.config_store.get()
         limits = {
             source.id: source.history_events
-            for source in self.config_store.get().sources
+            for source in config.sources
         }
         await asyncio.to_thread(self.event_store.insert_many, events, limits)
+        if self.incident_store is not None:
+            source_names = {source.id: source.name for source in config.sources}
+            await asyncio.to_thread(
+                self.incident_store.record_many,
+                events,
+                source_names,
+                config.incident_settings,
+            )
         for event in events:
             status = self.statuses.get(event.source_id)
             if status:

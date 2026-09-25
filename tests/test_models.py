@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from log_viewer.models import (
     AppConfig,
     AppSettings,
+    IncidentSettings,
     ParserConfig,
     SourceConfig,
     SourceKind,
@@ -69,3 +70,31 @@ def test_disk_buffer_rejects_outside_configured_limits(value):
 def test_invalid_custom_timestamp_regex_is_rejected_at_configuration_boundary():
     with pytest.raises(ValidationError, match="timestamp regular expression"):
         ParserConfig(timestamp_regex="[")
+
+
+@pytest.mark.unit
+def test_incident_settings_have_removable_default_keywords():
+    defaults = IncidentSettings()
+    assert "Reject" in defaults.keywords
+    assert IncidentSettings(keywords=[]).keywords == []
+
+
+@pytest.mark.unit
+def test_legacy_config_gets_incident_defaults():
+    config = AppConfig.model_validate({"version": 1, "workspaces": []})
+    assert config.incident_settings.retention_hours == 24
+    assert "Reject" in config.incident_settings.keywords
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("keywords", [[""], ["Reject", "reject"], ["x" * 101]])
+def test_invalid_incident_keywords_are_rejected(keywords):
+    with pytest.raises(ValidationError):
+        IncidentSettings(keywords=keywords)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("hours", [0, 8761])
+def test_incident_retention_is_bounded(hours):
+    with pytest.raises(ValidationError):
+        IncidentSettings(retention_hours=hours)

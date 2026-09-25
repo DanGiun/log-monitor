@@ -139,6 +139,32 @@ class AppSettings(BaseModel):
     diagnostics_max_bytes: int = Field(default=20 * 1024**2, ge=1 * 1024**2, le=200 * 1024**2)
 
 
+class IncidentSettings(BaseModel):
+    retention_hours: int = Field(default=24, ge=1, le=8760)
+    keywords: list[str] = Field(
+        default_factory=lambda: ["Reject", "Failed", "Failure", "Exception", "Timeout"],
+        max_length=100,
+    )
+
+    @field_validator("keywords")
+    @classmethod
+    def valid_keywords(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            keyword = value.strip()
+            if not keyword:
+                raise ValueError("incident keywords cannot be empty")
+            if len(keyword) > 100:
+                raise ValueError("incident keywords cannot exceed 100 characters")
+            folded = keyword.casefold()
+            if folded in seen:
+                raise ValueError("incident keywords must be unique ignoring case")
+            seen.add(folded)
+            cleaned.append(keyword)
+        return cleaned
+
+
 class AppConfig(BaseModel):
     version: int = 1
     settings: AppSettings = Field(default_factory=AppSettings)
@@ -147,6 +173,7 @@ class AppConfig(BaseModel):
         default_factory=lambda: [Workspace(id="default", name="default")]
     )
     saved_filters: list[SavedFilter] = Field(default_factory=list)
+    incident_settings: IncidentSettings = Field(default_factory=IncidentSettings)
     active_workspace_id: str = "default"
 
     @model_validator(mode="after")
@@ -180,6 +207,19 @@ class SourceStatus(BaseModel):
     parse_errors: int = 0
     timestamp_seen: bool = False
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class IncidentRecord(BaseModel):
+    id: str
+    source_id: str
+    source_name: str
+    level: str | None = None
+    message: str
+    first_seen: datetime
+    last_seen: datetime
+    count: int = Field(ge=1)
+    match_kind: Literal["error", "keyword"]
+    matched_keyword: str | None = None
 
 
 class QueryRequest(BaseModel):

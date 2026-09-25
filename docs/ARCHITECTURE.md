@@ -8,6 +8,7 @@ flowchart TD
     API --> CFG["ConfigStore"]
     API --> MGR["SourceManager"]
     API --> DB["EventStore"]
+    API --> IDB["IncidentStore"]
     API --> AGG["Aggregation engine"]
     MGR --> LOCAL["LocalFileFollower"]
     MGR --> SSH["SSHFileFollower"]
@@ -15,6 +16,7 @@ flowchart TD
     SSH --> PARSER
     PARSER --> MGR
     MGR --> DB
+    MGR --> IDB
     DB --> FILTER["Filter engine"]
 ```
 
@@ -30,6 +32,7 @@ flowchart TD
 | `readers.py` | parser, source/status models, Paramiko for SSH | manager tasks | read-only access to source logs |
 | `parser.py` | parser config and event models | both reader implementations | none |
 | `storage.py` | SQLite/WAL, filters | manager writes; API queries | session-only cache |
+| `incidents.py` | SQLite/WAL, normalization, similarity matching | manager writes; API queries | retention-controlled incident register |
 | `filters.py` | filter/event models, regex and datetime parsing | storage query and saved-filter validation | none |
 | `aggregation.py` | event model | aggregation endpoint | none |
 | `static/app.js` | REST and WebSocket contracts | browser DOM | workspace/source configuration through API |
@@ -44,11 +47,13 @@ sequenceDiagram
     participant P as Parser
     participant M as SourceManager
     participant S as EventStore
+    participant I as IncidentStore
     participant W as WebSocket
     R->>P: UTF-8 lines
     P-->>R: logical LogEvent blocks
     R->>M: events and source status
     M->>S: insert batch and enforce source limit
+    M->>I: classify and group qualifying events
     M-->>W: publish to subscribers
 ```
 
@@ -122,6 +127,22 @@ A source contains path/SSH location, parser settings, color, rolling event count
 A workspace stores grid columns and panels. A panel stores one or more source IDs, a filter tree, display settings, and aggregation mode.
 
 Persistent configuration stores only metadata. `LogEvent` records exist solely in the current SQLite session and browser memory.
+
+`IncidentRecord` groups are the intentional exception: representative incident
+messages, source metadata, counts, and first/last timestamps persist in
+`incidents.sqlite3` beside the configuration. Cleanup is based on `last_seen`.
+Occurrence fingerprints prevent a restart from counting the reader's initial tail
+twice; they cascade with their incident and contain no additional message body.
+
+## Incident flow
+
+Every reader already converges at `SourceManager._on_events`, so incident capture
+is attached there and does not duplicate file or SSH I/O. Exact `ERROR` levels or
+case-insensitive keyword matches qualify. UUIDs, IPs, hexadecimal values, and
+numbers are normalized, then messages from the same source within ten seconds are
+grouped at 70% similarity. The group retains frequency instead of silently
+discarding bursts. API listing derives its source set from the union of panels in
+the requested workspace.
 
 ## Extension points
 

@@ -2,6 +2,10 @@
 
 Local-first, real-time multi-log viewer for Linux. It runs a web interface on `127.0.0.1`, reads local files and remote files through SSH/SFTP, and never modifies source logs.
 
+The separate **Incidents** section retains `ERROR` events and configurable
+keyword matches, groups similar bursts without losing their occurrence count,
+and scopes the register to the sources used by the selected workspace.
+
 ## Requirements
 
 - Linux x86_64 or ARM64.
@@ -48,9 +52,13 @@ The service does not open a browser. Browse to `http://127.0.0.1:8765`.
 ## Configuration and runtime files
 
 - Persistent configuration: `~/.config/log-viewer/config.json`, mode `0600`.
+- Persistent incident register: `~/.config/log-viewer/incidents.sqlite3`, mode
+  `0600`; governed by the retention period configured in the Incidents section.
 - Temporary event cache: `~/.cache/log-viewer/session/`, directory mode `0700`; deleted between sessions.
 - Application diagnostic log: `~/.local/state/log-viewer/application.log`, rotated at 20 MiB by default.
-- Source log contents are not written into the persistent configuration or diagnostic report.
+- Source log contents are not written into persistent configuration or diagnostic
+  reports. Incident-worthy representative messages are intentionally persisted in
+  the dedicated incident register.
 - Each source's **Events retained** value is both the initial-history size and its rolling
   event limit. When a new event exceeds that limit, the oldest event for that source is
   removed from the temporary cache and browser panels.
@@ -94,7 +102,11 @@ python -m coverage run -m pytest -q
 python -m coverage report -m
 ```
 
-The delivered test suite contains 110 automated tests and currently reports 86% statement/branch coverage under the configured coverage calculation. See [docs/TEST_PLAN.md](docs/TEST_PLAN.md) and [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
+The delivered test suite contains 130 automated tests and currently reports 87%
+statement/branch coverage under the configured coverage calculation. See
+[docs/TEST_PLAN.md](docs/TEST_PLAN.md),
+[docs/INCIDENTS_TEST_PLAN.md](docs/INCIDENTS_TEST_PLAN.md), and
+[docs/TEST_REPORT.md](docs/TEST_REPORT.md).
 
 Generate deterministic QA fixtures, including multiline TLL-style payloads, JSON Lines,
 syslog, custom timestamps, malformed input, timestamp-less text, and Unicode:
@@ -130,6 +142,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - No `.gz` archive reading.
 - No log editing, deletion, annotation, export, or generation.
+- No incident acknowledgement, assignment, comments, or external notifications.
 - No mobile UI target.
 - One local user; no application authentication.
 - The server binds to localhost by default. Exposing it to other hosts is outside the supported security model.
