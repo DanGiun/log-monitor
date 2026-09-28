@@ -4,7 +4,9 @@ Local-first, real-time multi-log viewer for Linux. It runs a web interface on `1
 
 The separate **Incidents** section retains `ERROR` events and configurable
 keyword matches, groups similar bursts without losing their occurrence count,
-and scopes the register to the sources used by the selected workspace.
+and scopes the register to the sources used by the selected workspace. Incident
+groups can be removed individually with a horizontal mouse/touch swipe or cleared
+for the selected workspace with confirmation.
 
 ## Requirements
 
@@ -102,7 +104,7 @@ python -m coverage run -m pytest -q
 python -m coverage report -m
 ```
 
-The delivered test suite contains 133 automated tests and currently reports 87%
+The delivered test suite contains 137 automated tests and currently reports 87%
 statement/branch coverage under the configured coverage calculation. See
 [docs/TEST_PLAN.md](docs/TEST_PLAN.md),
 [docs/INCIDENTS_TEST_PLAN.md](docs/INCIDENTS_TEST_PLAN.md), and

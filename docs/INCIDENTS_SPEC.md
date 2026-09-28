@@ -54,6 +54,8 @@ source readers work.
   panels.
 - An incident for a source used in several workspaces is visible in each of them.
 - A workspace without panels or sources shows no incidents.
+- Manual deletion is source-scoped: deleting an incident visible in one workspace
+  also removes it from another workspace that references the same source.
 
 ### Interface
 
@@ -63,6 +65,13 @@ source readers work.
   keyword.
 - The view refreshes automatically and immediately respects workspace changes.
 - Retention and keyword editing are available inside the incident section.
+- `Clear all` removes every incident visible in the selected workspace after an
+  explicit confirmation.
+- Dragging an incident card horizontally beyond the deletion threshold removes
+  that group. Pointer Events support both mouse and touch input; a short slide-out
+  animation and delete background provide feedback.
+- Manual deletion is permanent for the stored group, but a future matching log
+  occurrence creates a new incident normally.
 
 ## API contract
 
@@ -70,6 +79,10 @@ source readers work.
   the sources of one workspace, newest activity first.
 - `PUT /api/incident-settings` atomically persists retention and keywords and
   immediately applies a shorter retention period.
+- `DELETE /api/incidents/{id}?workspace_id=<id>` removes one incident only when
+  its source is visible in the workspace.
+- `DELETE /api/incidents?workspace_id=<id>` removes all incidents visible in the
+  workspace and returns the number of deleted groups.
 - Existing API and WebSocket payloads remain backward compatible.
 
 ## Explicitly out of scope

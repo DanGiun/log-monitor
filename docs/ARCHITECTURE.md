@@ -145,6 +145,11 @@ messages require at least 70% similarity and a ten-second correlation window. Th
 group retains frequency instead of silently discarding bursts. API listing derives
 its source set from the union of panels in the requested workspace.
 
+Manual incident deletion uses the same derived source set as a server-side scope.
+SQLite foreign-key cascades remove occurrence fingerprints with their group, so a
+later matching log occurrence can create a fresh incident. Bulk clearing deletes
+only groups visible for the selected workspace.
+
 ## Extension points
 
 - Add another reader by implementing the reader protocol and registering it in `SourceManager`.

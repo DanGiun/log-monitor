@@ -26,6 +26,10 @@
 - Persist incidents across store close/reopen.
 - Enforce private database permissions.
 - Filter list queries by one or several source IDs and deterministic ordering.
+- Delete one incident with source-scope enforcement and cascade its occurrence
+  fingerprints.
+- Clear all incidents for selected sources without affecting unrelated sources.
+- Allow a deleted occurrence to create a new incident if it appears again.
 
 ## Manager and ingestion integration coverage
 
@@ -45,6 +49,9 @@
 - Unknown workspace returns 404; empty workspace returns an empty list.
 - A shorter retention setting immediately removes expired records.
 - Restarting the application with the same config directory preserves incidents.
+- Individual delete rejects incidents outside the requested workspace.
+- Clear-all deletes only groups visible in the requested workspace and reports
+  the exact deleted count.
 - Existing health, source, workspace, query, aggregation, diagnostics, and WebSocket
   tests remain green.
 
@@ -55,6 +62,9 @@
   and multiple-source rendering.
 - Keyword add/remove, duplicate rejection, retention save, API error toast, and
   automatic refresh.
+- Clear-all confirmation, empty-state transition, disabled state, and error toast.
+- Mouse/touch horizontal swipe threshold, snap-back, delete slide-out, and
+  preservation of vertical scrolling.
 - HTML escaping for incident text and source names.
 - Responsive layout at desktop and narrow widths.
 - JavaScript syntax check and static asset packaging.

@@ -119,8 +119,13 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; }
 .incident-results-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .incident-results-head div { display: flex; flex-direction: column; gap: 3px; }
 .incident-results-head span { color: var(--muted); font-size: 12px; }
+.incident-results-head .incident-results-actions { flex-direction: row; align-items: center; }
+button:disabled { opacity: .5; cursor: default; }
 .incident-list { padding: 12px; display: flex; flex-direction: column; gap: 9px; }
-.incident-card { border: 1px solid var(--line); border-left: 4px solid var(--incident-color); border-radius: 8px; background: #0f1724; overflow: hidden; }
+.incident-swipe-shell { position: relative; overflow: hidden; border-radius: 8px; background: #4b2029; }
+.incident-delete-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: #ffdce0; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.incident-card { position: relative; border: 1px solid var(--line); border-left: 4px solid var(--incident-color); border-radius: 8px; background: #0f1724; overflow: hidden; touch-action: pan-y; user-select: text; will-change: transform, opacity; }
+.incident-card.swipe-settling, .incident-card.swipe-deleting { transition: transform 180ms ease-out, opacity 180ms ease-out; }
 .incident-card-head { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .incident-source { font-weight: 700; }
 .incident-reason { border-radius: 999px; padding: 2px 7px; font-size: 11px; background: #2b3444; color: var(--muted); }

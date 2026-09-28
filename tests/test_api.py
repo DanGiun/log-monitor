@@ -22,6 +22,7 @@ def test_health_and_root_are_available(client):
     root = test_client.get("/").text
     assert "Log Viewer" in root
     assert 'id="incidents-view"' in root
+    assert 'id="clear-incidents"' in root
 
 
 @pytest.mark.acceptance
@@ -337,3 +338,73 @@ def test_incidents_survive_application_restart(tmp_path):
         response = second.get("/api/incidents?workspace_id=ops")
         assert response.status_code == 200
         assert response.json()[0]["message"] == "persistent failure"
+
+
+@pytest.mark.acceptance
+def test_delete_incident_is_limited_to_workspace_sources(client):
+    test_client, app = client
+    workspace = {
+        "id": "ops",
+        "name": "Operations",
+        "panels": [{"id": "panel-a", "title": "A", "source_ids": ["source-a"]}],
+        "grid_columns": 1,
+    }
+    assert test_client.post("/api/workspaces", json=workspace).status_code == 201
+    now = datetime.now(timezone.utc)
+    visible = app.state.incident_store.record(
+        _incident_event("source-a", "visible failure", now),
+        "Service A",
+        IncidentSettings(),
+        now,
+    )
+    hidden = app.state.incident_store.record(
+        _incident_event("source-b", "hidden failure", now, 2),
+        "Service B",
+        IncidentSettings(),
+        now,
+    )
+    assert visible is not None and hidden is not None
+
+    assert test_client.delete(
+        f"/api/incidents/{hidden.id}?workspace_id=ops"
+    ).status_code == 404
+    assert test_client.delete(
+        f"/api/incidents/{visible.id}?workspace_id=ops"
+    ).status_code == 204
+    assert test_client.get("/api/incidents?workspace_id=ops").json() == []
+    assert app.state.incident_store.count() == 1
+
+
+@pytest.mark.acceptance
+def test_clear_incidents_deletes_only_current_workspace_sources(client):
+    test_client, app = client
+    workspace = {
+        "id": "ops",
+        "name": "Operations",
+        "panels": [{"id": "panel-a", "title": "A", "source_ids": ["source-a"]}],
+        "grid_columns": 1,
+    }
+    assert test_client.post("/api/workspaces", json=workspace).status_code == 201
+    now = datetime.now(timezone.utc)
+    for sequence, message in enumerate(
+        ("database unavailable", "order rejected by exchange"), start=1
+    ):
+        app.state.incident_store.record(
+            _incident_event("source-a", message, now, sequence),
+            "Service A",
+            IncidentSettings(),
+            now,
+        )
+    app.state.incident_store.record(
+        _incident_event("source-b", "unrelated failure", now, 3),
+        "Service B",
+        IncidentSettings(),
+        now,
+    )
+
+    response = test_client.delete("/api/incidents?workspace_id=ops")
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 2}
+    assert test_client.get("/api/incidents?workspace_id=ops").json() == []
+    assert app.state.incident_store.count() == 1
+    assert test_client.delete("/api/incidents?workspace_id=missing").status_code == 404

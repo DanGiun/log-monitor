@@ -101,11 +101,7 @@ def create_app(
         await asyncio.to_thread(incident_store.cleanup, settings.retention_hours)
         return settings
 
-    @app.get("/api/incidents", response_model=list[IncidentRecord])
-    async def incidents(
-        workspace_id: str | None = None,
-        limit: int = Query(default=1000, ge=1, le=10_000),
-    ) -> list[IncidentRecord]:
+    def workspace_source_ids(workspace_id: str | None) -> list[str]:
         config = config_store.get()
         target_workspace_id = workspace_id or config.active_workspace_id
         workspace = next(
@@ -114,19 +110,47 @@ def create_app(
         )
         if workspace is None:
             raise HTTPException(404, "Workspace not found")
-        source_ids = sorted(
+        return sorted(
             {
                 source_id
                 for panel in workspace.panels
                 for source_id in panel.source_ids
             }
         )
+
+    @app.get("/api/incidents", response_model=list[IncidentRecord])
+    async def incidents(
+        workspace_id: str | None = None,
+        limit: int = Query(default=1000, ge=1, le=10_000),
+    ) -> list[IncidentRecord]:
+        config = config_store.get()
+        source_ids = workspace_source_ids(workspace_id)
         return await asyncio.to_thread(
             incident_store.list_for_sources,
             source_ids,
             config.incident_settings.retention_hours,
             limit,
         )
+
+    @app.delete("/api/incidents")
+    async def clear_incidents(workspace_id: str | None = None) -> dict[str, int]:
+        source_ids = workspace_source_ids(workspace_id)
+        deleted = await asyncio.to_thread(
+            incident_store.delete_for_sources, source_ids
+        )
+        return {"deleted": deleted}
+
+    @app.delete("/api/incidents/{incident_id}", status_code=204)
+    async def delete_incident(
+        incident_id: str,
+        workspace_id: str | None = None,
+    ) -> None:
+        source_ids = workspace_source_ids(workspace_id)
+        deleted = await asyncio.to_thread(
+            incident_store.delete, incident_id, source_ids
+        )
+        if not deleted:
+            raise HTTPException(404, "Incident not found in workspace")
 
     @app.get("/api/statuses")
     async def statuses():

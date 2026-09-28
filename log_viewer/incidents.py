@@ -381,6 +381,39 @@ class IncidentStore:
             ).fetchall()
         return [self._row_to_record(row) for row in rows]
 
+    def delete(self, incident_id: str, source_ids: list[str]) -> bool:
+        """Delete one incident only when it is visible for the given sources."""
+        if not source_ids:
+            return False
+        placeholders = ",".join("?" for _ in source_ids)
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                f"""
+                DELETE FROM incidents
+                WHERE id = ? AND source_id IN ({placeholders})
+                """,
+                [incident_id, *source_ids],
+            )
+            deleted = cursor.rowcount > 0
+            if deleted:
+                self._connection.execute("PRAGMA incremental_vacuum")
+            return deleted
+
+    def delete_for_sources(self, source_ids: list[str]) -> int:
+        """Delete every incident visible for the given sources."""
+        if not source_ids:
+            return 0
+        placeholders = ",".join("?" for _ in source_ids)
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                f"DELETE FROM incidents WHERE source_id IN ({placeholders})",
+                source_ids,
+            )
+            deleted = max(0, cursor.rowcount)
+            if deleted:
+                self._connection.execute("PRAGMA incremental_vacuum")
+            return deleted
+
     def count(self) -> int:
         with self._lock:
             return int(self._connection.execute("SELECT COUNT(*) FROM incidents").fetchone()[0])

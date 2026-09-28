@@ -9,6 +9,7 @@ const state = {
   incidentTimer: null,
   incidents: [],
   incidentsLoading: false,
+  incidentGestureActive: false,
   activeSection: "logs",
 };
 
@@ -175,7 +176,7 @@ function renderIncidentSettings() {
 }
 
 async function loadIncidents() {
-  if (state.incidentsLoading || state.activeSection !== "incidents") return;
+  if (state.incidentsLoading || state.incidentGestureActive || state.activeSection !== "incidents") return;
   state.incidentsLoading = true;
   try {
     state.incidents = await api(`/api/incidents?workspace_id=${encodeURIComponent(activeWorkspace().id)}`);
@@ -192,6 +193,7 @@ function renderIncidents() {
   const totalOccurrences = state.incidents.reduce((sum, incident) => sum + incident.count, 0);
   $("#incident-summary").textContent = `${state.incidents.length} incident groups · ${totalOccurrences} occurrences`;
   $("#incident-workspace-name").textContent = `Workspace: ${workspace.name}`;
+  $("#clear-incidents").disabled = state.incidents.length === 0;
   const root = $("#incident-list");
   if (!workspace.panels.some(panel => panel.source_ids.length)) {
     root.innerHTML = '<div class="empty-state"><h2>No sources in this workspace</h2><p>Add sources to a panel to see their incidents here.</p></div>';
@@ -205,7 +207,9 @@ function renderIncidents() {
     const source = sourceById(incident.source_id);
     const color = source?.color || "#999999";
     const reason = incident.match_kind === "error" ? "ERROR" : `Keyword: ${incident.matched_keyword || "—"}`;
-    return `<article class="incident-card" style="--incident-color:${color}">
+    return `<div class="incident-swipe-shell" data-incident-id="${escapeHtml(incident.id)}">
+      <div class="incident-delete-hint" aria-hidden="true"><span>Delete</span><span>Delete</span></div>
+      <article class="incident-card" style="--incident-color:${color}" title="Drag left or right to delete">
       <div class="incident-card-head">
         <span class="incident-source" title="${escapeHtml(source?.path || incident.source_id)}">${escapeHtml(incident.source_name)}</span>
         <span class="incident-reason ${incident.match_kind}">${escapeHtml(reason)}</span>
@@ -213,8 +217,86 @@ function renderIncidents() {
       </div>
       <pre class="incident-message">${escapeHtml(incident.message)}</pre>
       <div class="incident-times"><span>First: ${formatTimestamp(incident.first_seen)}</span><span>Last: ${formatTimestamp(incident.last_seen)}</span></div>
-    </article>`;
+      </article>
+    </div>`;
   }).join("");
+  setupIncidentSwipe();
+}
+
+function setupIncidentSwipe() {
+  $$(".incident-swipe-shell").forEach(shell => {
+    const card = $(".incident-card", shell);
+    let startX = 0, startY = 0, offsetX = 0, axis = null;
+
+    const reset = () => {
+      card.classList.add("swipe-settling");
+      card.style.transform = "";
+      card.style.opacity = "";
+      setTimeout(() => card.classList.remove("swipe-settling"), 180);
+      state.incidentGestureActive = false;
+    };
+
+    card.addEventListener("pointerdown", event => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      startX = event.clientX;
+      startY = event.clientY;
+      offsetX = 0;
+      axis = null;
+      state.incidentGestureActive = true;
+      card.classList.remove("swipe-settling");
+      card.setPointerCapture(event.pointerId);
+    });
+
+    card.addEventListener("pointermove", event => {
+      if (!card.hasPointerCapture(event.pointerId)) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 6) {
+        axis = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
+      }
+      if (axis !== "horizontal") return;
+      event.preventDefault();
+      offsetX = Math.max(-card.offsetWidth, Math.min(card.offsetWidth, dx));
+      card.style.transform = `translateX(${offsetX}px)`;
+      card.style.opacity = String(Math.max(0.45, 1 - Math.abs(offsetX) / card.offsetWidth));
+    });
+
+    const finish = event => {
+      if (!card.hasPointerCapture(event.pointerId)) return;
+      card.releasePointerCapture(event.pointerId);
+      const threshold = Math.min(120, card.offsetWidth * 0.25);
+      if (axis === "horizontal" && Math.abs(offsetX) >= threshold) {
+        deleteIncident(shell, offsetX < 0 ? -1 : 1);
+      } else {
+        reset();
+      }
+    };
+    card.addEventListener("pointerup", finish);
+    card.addEventListener("pointercancel", reset);
+  });
+}
+
+async function deleteIncident(shell, direction) {
+  const card = $(".incident-card", shell);
+  card.classList.add("swipe-deleting");
+  card.style.transform = `translateX(${direction * 110}%)`;
+  card.style.opacity = "0";
+  try {
+    await api(`/api/incidents/${encodeURIComponent(shell.dataset.incidentId)}?workspace_id=${encodeURIComponent(activeWorkspace().id)}`, {method:"DELETE"});
+    state.incidents = state.incidents.filter(item => item.id !== shell.dataset.incidentId);
+    setTimeout(() => {
+      state.incidentGestureActive = false;
+      renderIncidents();
+    }, 180);
+    toast("Incident deleted");
+  } catch (error) {
+    card.classList.remove("swipe-deleting");
+    card.classList.add("swipe-settling");
+    card.style.transform = "";
+    card.style.opacity = "";
+    state.incidentGestureActive = false;
+    toast(`Could not delete incident: ${error.message}`, "error");
+  }
 }
 
 async function saveIncidentSettings(settings) {
@@ -613,6 +695,22 @@ $("#delete-workspace").onclick = async () => { const w=activeWorkspace();if(w.id
 $("#show-logs").onclick = () => showSection("logs");
 $("#show-incidents").onclick = () => showSection("incidents");
 $("#refresh-incidents").onclick = loadIncidents;
+$("#clear-incidents").onclick = async () => {
+  const workspace = activeWorkspace();
+  if (!state.incidents.length) return;
+  if (!confirm(`Clear all incidents visible in workspace '${workspace.name}'? Shared sources will also be cleared in other workspaces. This cannot be undone.`)) return;
+  const button = $("#clear-incidents");
+  button.disabled = true;
+  try {
+    const result = await api(`/api/incidents?workspace_id=${encodeURIComponent(workspace.id)}`, {method:"DELETE"});
+    state.incidents = [];
+    renderIncidents();
+    toast(`${result.deleted} incident groups deleted`);
+  } catch (error) {
+    button.disabled = false;
+    toast(`Could not clear incidents: ${error.message}`, "error");
+  }
+};
 $("#incident-retention-form").addEventListener("submit", async event => {
   event.preventDefault();
   const settings = {...state.config.incident_settings, retention_hours:Number($("#incident-retention").value)};

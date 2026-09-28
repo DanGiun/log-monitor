@@ -245,6 +245,56 @@ def test_store_survives_reopen_and_filters_sources(tmp_path):
 
 
 @pytest.mark.integration
+def test_delete_incident_is_source_scoped_and_removes_replay_fingerprint(tmp_path):
+    store = IncidentStore(tmp_path / "incidents.sqlite3")
+    now = datetime.now(timezone.utc)
+    event_a = make_event(source_id="a", timestamp=now, sequence=1)
+    event_b = make_event(source_id="b", timestamp=now, sequence=2)
+    try:
+        incident_a = store.record(event_a, "A", IncidentSettings(), now)
+        store.record(event_b, "B", IncidentSettings(), now)
+        assert incident_a is not None
+        assert store.delete(incident_a.id, ["b"]) is False
+        assert store.delete(incident_a.id, ["a"]) is True
+        assert store.count() == 1
+        assert store.record(event_a, "A", IncidentSettings(), now) is not None
+        assert store.count() == 2
+    finally:
+        store.close()
+
+
+@pytest.mark.integration
+def test_delete_for_sources_preserves_unrelated_incidents(tmp_path):
+    store = IncidentStore(tmp_path / "incidents.sqlite3")
+    now = datetime.now(timezone.utc)
+    try:
+        store.record(
+            make_event(source_id="a", message="database unavailable", timestamp=now, sequence=1),
+            "A",
+            IncidentSettings(),
+            now,
+        )
+        store.record(
+            make_event(source_id="a", message="order rejected by exchange", timestamp=now, sequence=2),
+            "A",
+            IncidentSettings(),
+            now,
+        )
+        store.record(
+            make_event(source_id="b", message="worker timeout", timestamp=now, sequence=3),
+            "B",
+            IncidentSettings(),
+            now,
+        )
+        assert store.delete_for_sources(["a"]) == 2
+        assert store.delete_for_sources([]) == 0
+        remaining = store.list_for_sources(["a", "b"], 24, now=now)
+        assert [item.source_id for item in remaining] == ["b"]
+    finally:
+        store.close()
+
+
+@pytest.mark.integration
 def test_reopen_migrates_and_merges_legacy_timestamp_groups(tmp_path):
     path = tmp_path / "incidents.sqlite3"
     now = datetime.now(timezone.utc)

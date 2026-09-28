@@ -61,7 +61,10 @@
     <section class="incident-results">
       <div class="incident-results-head">
         <div><strong id="incident-summary">0 incidents</strong><span id="incident-workspace-name"></span></div>
-        <button id="refresh-incidents" type="button">Refresh</button>
+        <div class="incident-results-actions">
+          <button id="clear-incidents" class="danger ghost" type="button">Clear all</button>
+          <button id="refresh-incidents" type="button">Refresh</button>
+        </div>
       </div>
       <div id="incident-list" class="incident-list"></div>
     </section>

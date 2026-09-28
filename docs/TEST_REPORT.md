@@ -1,14 +1,14 @@
 # Test report
 
-**Execution date:** 2026-09-25
-**Version:** 0.2.1
+**Execution date:** 2026-09-28
+**Version:** 0.2.2
 **Platform:** Linux, Python 3.12
 **Command:** `python -m coverage run -m pytest -q`
 
 ## Result
 
-- Collected automated tests: **133**
-- Passed: **133**
+- Collected automated tests: **137**
+- Passed: **137**
 - Failed: **0**
 - Errors: **0**
 - Total coverage: **87%**
@@ -40,6 +40,9 @@
   permissions, workspace filtering, and persistence across application restart.
 - Timestamp-independent exact incident grouping across the full retention period,
   while fuzzy grouping remains constrained to the 10-second burst window.
+- Workspace-scoped individual and bulk incident deletion, protection from deleting
+  hidden-source incidents, cascading fingerprint cleanup, and recreation after a
+  future matching occurrence.
 
 ## Generated-data matrix
 
