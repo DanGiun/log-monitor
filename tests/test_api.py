@@ -19,10 +19,14 @@ def client(tmp_path):
 def test_health_and_root_are_available(client):
     test_client, _ = client
     assert test_client.get("/api/health").json()["status"] == "ok"
-    root = test_client.get("/").text
+    root_response = test_client.get("/")
+    root = root_response.text
+    assert root_response.headers["cache-control"] == "no-cache"
     assert "Log Viewer" in root
     assert 'id="incidents-view"' in root
     assert 'id="clear-incidents"' in root
+    assert '/static/styles.css?v=0.2.3' in root
+    assert '/static/app.js?v=0.2.3' in root
 
 
 @pytest.mark.acceptance

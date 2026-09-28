@@ -1,14 +1,14 @@
 # Test report
 
-**Execution date:** 2026-09-28
-**Version:** 0.2.2
-**Platform:** Linux, Python 3.12
+**Execution date:** 2026-09-29
+**Version:** 0.2.3
+**Platform:** Linux, Python 3.12, Playwright 1.63, Chromium 153
 **Command:** `python -m coverage run -m pytest -q`
 
 ## Result
 
-- Collected automated tests: **137**
-- Passed: **137**
+- Collected automated tests: **139**
+- Passed: **139**
 - Failed: **0**
 - Errors: **0**
 - Total coverage: **87%**
@@ -43,6 +43,12 @@
 - Workspace-scoped individual and bulk incident deletion, protection from deleting
   hidden-source incidents, cascading fingerprint cleanup, and recreation after a
   future matching occurrence.
+- Browser-level clear-all flow: confirmation, request execution, empty-state render,
+  disabled control, and persisted incident count reduced to zero.
+- Browser-level mouse swipe flow: below-threshold snap-back and above-threshold
+  deletion with the persisted incident count reduced by exactly one.
+- Versioned JavaScript/CSS references and non-cacheable application shell prevent a
+  rebuilt container from mixing new HTML with stale incident handlers or styles.
 
 ## Generated-data matrix
 
@@ -69,13 +75,14 @@ The incident register was implemented as new functionality according to
 [INCIDENTS_SPEC.md](INCIDENTS_SPEC.md); its coverage matrix is documented in
 [INCIDENTS_TEST_PLAN.md](INCIDENTS_TEST_PLAN.md).
 
+The 0.2.3 defect was caused by fixed static asset URLs. A browser could receive
+the new HTML containing `Clear all` while reusing an older `app.js` and
+`styles.css`, so neither the clear handler nor pointer gesture code was active.
+The application shell now references versioned assets and is always revalidated.
+
 ## Residual risks
 
 - Real SSH integration depends on server-specific SFTP behavior and should be validated against each target environment.
-- The execution browser is isolated from locally started processes. UI network
-  contracts, state transitions, escaping paths, static packaging, and JavaScript
-  syntax were verified; a visual click-through remains part of deployment-host
-  smoke testing.
 - Very large sustained throughput beyond the agreed several-lines-per-second profile requires a dedicated endurance test in the deployment environment.
 
 ## Additional verification
@@ -86,5 +93,7 @@ The incident register was implemented as new functionality according to
   outside the bug-fix scope.
 - `ruff check --select E4,E7,E9,F log_viewer tests`: passed.
 - `node --check log_viewer/static/app.js`: passed.
+- Playwright Chromium tests for `Clear all`, swipe snap-back, and swipe deletion:
+  **2 passed** with no page-level JavaScript errors.
 - Deterministic generator execution and 307-event API matrix: passed.
 - Wheel build succeeded; Python modules and all three static UI assets are present.

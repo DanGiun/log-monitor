@@ -73,7 +73,10 @@ def create_app(
 
     @app.get("/", include_in_schema=False)
     async def root() -> FileResponse:
-        return FileResponse(static_dir / "index.html")
+        return FileResponse(
+            static_dir / "index.html",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:

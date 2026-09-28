@@ -65,6 +65,10 @@
 - Clear-all confirmation, empty-state transition, disabled state, and error toast.
 - Mouse/touch horizontal swipe threshold, snap-back, delete slide-out, and
   preservation of vertical scrolling.
+- Playwright Chromium verifies the clear-all state transition against the live API
+  and SQLite store, plus below/above-threshold mouse swipes against real DOM events.
+- The application shell references release-versioned JavaScript and CSS and is
+  revalidated so an updated HTML document cannot reuse stale incident handlers.
 - HTML escaping for incident text and source names.
 - Responsive layout at desktop and narrow widths.
 - JavaScript syntax check and static asset packaging.
