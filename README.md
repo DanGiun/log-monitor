@@ -105,8 +105,9 @@ python -m coverage run -m pytest -q
 python -m coverage report -m
 ```
 
-The delivered test suite contains 139 automated tests, including two real-browser
-Playwright scenarios for incident clearing and mouse swipe deletion, and currently reports 87%
+The delivered test suite contains 140 automated tests, including three real-browser
+Playwright scenarios for incident clearing, mouse swipe deletion, and source-list
+overflow scrolling, and currently reports 87%
 statement/branch coverage under the configured coverage calculation. See
 [docs/TEST_PLAN.md](docs/TEST_PLAN.md),
 [docs/INCIDENTS_TEST_PLAN.md](docs/INCIDENTS_TEST_PLAN.md), and

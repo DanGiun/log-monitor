@@ -1,14 +1,14 @@
 # Test report
 
 **Execution date:** 2026-09-29
-**Version:** 0.2.3
+**Version:** 0.2.4
 **Platform:** Linux, Python 3.12, Playwright 1.63, Chromium 153
 **Command:** `python -m coverage run -m pytest -q`
 
 ## Result
 
-- Collected automated tests: **139**
-- Passed: **139**
+- Collected automated tests: **140**
+- Passed: **140**
 - Failed: **0**
 - Errors: **0**
 - Total coverage: **87%**
@@ -49,6 +49,9 @@
   deletion with the persisted incident count reduced by exactly one.
 - Versioned JavaScript/CSS references and non-cacheable application shell prevent a
   rebuilt container from mixing new HTML with stale incident handlers or styles.
+- Browser-level source capacity flow: 18 source cards in a 600-pixel viewport create
+  an independently scrollable list; the buffer indicator remains visible, does not
+  overlap the list, and the final source is reachable after scrolling.
 
 ## Generated-data matrix
 
@@ -80,6 +83,12 @@ the new HTML containing `Clear all` while reusing an older `app.js` and
 `styles.css`, so neither the clear handler nor pointer gesture code was active.
 The application shell now references versioned assets and is always revalidated.
 
+The 0.2.4 defect was caused by automatic minimum sizing in the nested grid/flex
+layout. The source list expanded to its content height instead of shrinking inside
+the viewport, pushing the disk-buffer indicator below the screen. The sidebar and
+list now have explicit shrink/overflow constraints, while the buffer indicator is
+kept as a non-shrinking footer.
+
 ## Residual risks
 
 - Real SSH integration depends on server-specific SFTP behavior and should be validated against each target environment.
@@ -93,7 +102,7 @@ The application shell now references versioned assets and is always revalidated.
   outside the bug-fix scope.
 - `ruff check --select E4,E7,E9,F log_viewer tests`: passed.
 - `node --check log_viewer/static/app.js`: passed.
-- Playwright Chromium tests for `Clear all`, swipe snap-back, and swipe deletion:
-  **2 passed** with no page-level JavaScript errors.
+- Playwright Chromium tests for `Clear all`, swipe snap-back, swipe deletion, and
+  source-list scrolling: **3 passed** with no page-level JavaScript errors.
 - Deterministic generator execution and 307-event API matrix: passed.
 - Wheel build succeeded; Python modules and all three static UI assets are present.

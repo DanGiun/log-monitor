@@ -25,8 +25,8 @@ def test_health_and_root_are_available(client):
     assert "Log Viewer" in root
     assert 'id="incidents-view"' in root
     assert 'id="clear-incidents"' in root
-    assert '/static/styles.css?v=0.2.3' in root
-    assert '/static/app.js?v=0.2.3' in root
+    assert '/static/styles.css?v=0.2.4' in root
+    assert '/static/app.js?v=0.2.4' in root
 
 
 @pytest.mark.acceptance

@@ -33,9 +33,9 @@ label > input:not([type=checkbox]), label > select { flex: 1; }
 .section-tab.active { border-color: #3978cf; background: #285ea8; }
 .spacer { flex: 1; }
 .shell { display: grid; grid-template-columns: 250px 1fr; height: calc(100vh - 54px); }
-.sidebar { min-width: 0; background: #0f1724; border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sidebar { min-width: 0; min-height: 0; overflow: hidden; background: #0f1724; border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .sidebar-title { display: flex; justify-content: space-between; align-items: center; }
-.source-list { overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.source-list { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; flex: 1 1 auto; display: flex; flex-direction: column; gap: 7px; }
 .source-card { border: 1px solid var(--line); border-left: 4px solid var(--source-color); border-radius: 7px; padding: 8px; background: var(--panel); }
 .source-card.status-error, .source-card.status-missing { box-shadow: inset 0 0 0 1px var(--danger); }
 .source-head { display: flex; justify-content: space-between; gap: 5px; align-items: center; }
@@ -45,7 +45,7 @@ label > input:not([type=checkbox]), label > select { flex: 1; }
 .status-running { color: var(--ok); } .status-error, .status-missing { color: var(--danger); } .status-connecting, .status-starting { color: var(--warn); }
 .source-actions { display: flex; gap: 4px; }
 .source-actions button { padding: 2px 6px; font-size: 11px; }
-.buffer-card { padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.buffer-card { flex: 0 0 auto; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .buffer-card > div { display: flex; justify-content: space-between; }
 .progress { height: 5px; border-radius: 9px; background: #243148; margin-top: 7px; overflow: hidden; }
 .progress span { display: block; width: 0; height: 100%; background: var(--accent); }

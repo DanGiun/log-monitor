@@ -24,6 +24,8 @@ the exact resulting counts before filter assertions.
 - **Unit:** models, timestamp parsing, multiline assembly, filters, normalization, aggregations, incident classification and similarity.
 - **Component/integration:** configuration persistence, SQLite buffer, persistent incident store, local follower, SSH policy, source manager.
 - **Acceptance/API:** source/workspace lifecycle, error responses, query/aggregation behavior, diagnostics, web entry point, WebSocket connection.
+- **Browser UI:** incident deletion gestures and source-list overflow/layout behavior
+  in a constrained viewport.
 
 ## Test-design techniques
 
@@ -89,6 +91,8 @@ Filter logic:
 - Reliability: source errors are nonfatal; cache and config writes are isolated.
 - Performance target: local events visible in approximately 500 ms plus configured sort delay; SSH events approximately 1.5 s under normal network conditions.
 - Capacity target: 30 configured sources, normally around 10 active, at several lines per second, with per-source rolling event limits and a global disk safety limit.
+- UI capacity: a long source list scrolls independently without covering or pushing
+  the disk-buffer indicator outside the viewport; the final source remains reachable.
 
 ## Entry and exit criteria
 

@@ -13,7 +13,7 @@ import uvicorn
 from playwright.sync_api import expect, sync_playwright
 
 from log_viewer.api import create_app
-from log_viewer.models import IncidentSettings, LogEvent, PanelConfig
+from log_viewer.models import IncidentSettings, LogEvent, PanelConfig, SourceConfig
 
 
 def _free_port() -> int:
@@ -35,11 +35,40 @@ def _event(source_id: str, message: str, sequence: int) -> LogEvent:
     )
 
 
+def _launch_browser(playwright):
+    browser_name = os.environ.get("PLAYWRIGHT_BROWSER", "chromium")
+    browser_type = getattr(playwright, browser_name)
+    executable_path = os.environ.get("PLAYWRIGHT_BROWSER_EXECUTABLE")
+    launch_options = {"executable_path": executable_path} if executable_path else {}
+    browser_args = os.environ.get("PLAYWRIGHT_BROWSER_ARGS")
+    if browser_args:
+        launch_options["args"] = shlex.split(browser_args)
+    browser_ld_preload = os.environ.get("PLAYWRIGHT_BROWSER_LD_PRELOAD")
+    if browser_ld_preload:
+        launch_options["env"] = {
+            **os.environ,
+            "LD_PRELOAD": browser_ld_preload,
+            "FAKE_PROC_SELF_EXE": os.environ.get(
+                "PLAYWRIGHT_BROWSER_FAKE_EXE", executable_path or ""
+            ),
+        }
+    return browser_type.launch(headless=True, **launch_options)
+
+
 @pytest.fixture
 def incident_ui_server(tmp_path):
     app = create_app(tmp_path / "config.json", tmp_path / "cache")
 
     def configure(config):
+        config.sources = [
+            SourceConfig(
+                id=f"source-{index:02d}",
+                name=f"Demonstration source {index:02d}",
+                path=f"/logs/source-{index:02d}.log",
+                enabled=False,
+            )
+            for index in range(1, 19)
+        ]
         config.workspaces[0].panels = [
             PanelConfig(id="incident-panel", source_ids=["source-a"])
         ]
@@ -87,23 +116,7 @@ def incident_ui_server(tmp_path):
 def incident_page(incident_ui_server):
     base_url, app = incident_ui_server
     with sync_playwright() as playwright:
-        browser_name = os.environ.get("PLAYWRIGHT_BROWSER", "chromium")
-        browser_type = getattr(playwright, browser_name)
-        executable_path = os.environ.get("PLAYWRIGHT_BROWSER_EXECUTABLE")
-        launch_options = {"executable_path": executable_path} if executable_path else {}
-        browser_args = os.environ.get("PLAYWRIGHT_BROWSER_ARGS")
-        if browser_args:
-            launch_options["args"] = shlex.split(browser_args)
-        browser_ld_preload = os.environ.get("PLAYWRIGHT_BROWSER_LD_PRELOAD")
-        if browser_ld_preload:
-            launch_options["env"] = {
-                **os.environ,
-                "LD_PRELOAD": browser_ld_preload,
-                "FAKE_PROC_SELF_EXE": os.environ.get(
-                    "PLAYWRIGHT_BROWSER_FAKE_EXE", executable_path or ""
-                ),
-            }
-        browser = browser_type.launch(headless=True, **launch_options)
+        browser = _launch_browser(playwright)
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         page_errors: list[str] = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
@@ -114,6 +127,21 @@ def incident_page(incident_ui_server):
             "flex-direction", "row"
         )
         yield page, app
+        browser.close()
+        assert page_errors == []
+
+
+@pytest.fixture
+def source_list_page(incident_ui_server):
+    base_url, _ = incident_ui_server
+    with sync_playwright() as playwright:
+        browser = _launch_browser(playwright)
+        page = browser.new_page(viewport={"width": 1280, "height": 600})
+        page_errors: list[str] = []
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
+        page.goto(base_url, wait_until="networkidle")
+        expect(page.locator(".source-card")).to_have_count(18)
+        yield page
         browser.close()
         assert page_errors == []
 
@@ -160,3 +188,29 @@ def test_mouse_swipe_snaps_back_then_deletes_incident(incident_page):
 
     expect(page.locator(".incident-card")).to_have_count(1)
     assert app.state.incident_store.count() == 1
+
+
+@pytest.mark.ui
+def test_source_list_scrolls_without_covering_buffer(source_list_page):
+    page = source_list_page
+    source_list = page.locator("#source-list")
+    buffer_card = page.locator(".buffer-card")
+    last_source = page.locator(".source-card").last
+
+    expect(buffer_card).to_be_in_viewport()
+    dimensions = source_list.evaluate(
+        "element => ({clientHeight: element.clientHeight, scrollHeight: element.scrollHeight})"
+    )
+    assert dimensions["scrollHeight"] > dimensions["clientHeight"]
+
+    list_box = source_list.bounding_box()
+    buffer_box = buffer_card.bounding_box()
+    assert list_box is not None
+    assert buffer_box is not None
+    assert list_box["y"] + list_box["height"] <= buffer_box["y"]
+    expect(last_source).not_to_be_in_viewport()
+
+    source_list.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+
+    expect(last_source).to_be_in_viewport()
+    expect(buffer_card).to_be_in_viewport()
